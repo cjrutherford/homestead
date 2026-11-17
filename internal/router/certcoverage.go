@@ -56,12 +56,26 @@ func HostCovers(host, name string) bool {
 	return ok && rest != "" && !strings.Contains(rest, ".")
 }
 
+// CertificatePack contains non-secret identity and coverage data.
+type CertificatePack struct {
+	ID           string
+	Hosts        []string
+	Certificates []PackCertificate
+}
+
+type PackCertificate struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
 // ZoneCertificates is what a zone's certificates cover, as far as the
 // token could read it.
 type ZoneCertificates struct {
 	Zone string
 	// Hosts are the host entries of the zone's active certificate packs.
-	Hosts []string
+	Hosts              []string
+	Packs              []CertificatePack
+	TotalTLSUnreadable bool
 	// TotalTLS is on: Cloudflare issues a certificate for every proxied
 	// name, however deep.
 	TotalTLS bool
@@ -129,8 +143,10 @@ func (c *TunnelClient) ZoneCertificates(ctx context.Context, token string, zone 
 		return out, nil
 	}
 	var packs []struct {
-		Status string   `json:"status"`
-		Hosts  []string `json:"hosts"`
+		ID           string            `json:"id"`
+		Certificates []PackCertificate `json:"certificates"`
+		Status       string            `json:"status"`
+		Hosts        []string          `json:"hosts"`
 	}
 	if err := c.call(ctx, token, http.MethodGet, "/zones/"+zone.ID+"/ssl/certificate_packs?per_page=100", nil, &packs); err != nil {
 		if ctx.Err() != nil {
@@ -139,21 +155,27 @@ func (c *TunnelClient) ZoneCertificates(ctx context.Context, token string, zone 
 		out.Unreadable = true
 		return out, nil
 	}
+	// A full page may have more results; do not treat a partial read as authoritative.
+	if len(packs) >= 100 {
+		out.Unreadable = true
+		return out, nil
+	}
 	for _, pack := range packs {
 		if pack.Status == "" || pack.Status == "active" {
 			out.Hosts = append(out.Hosts, pack.Hosts...)
+			out.Packs = append(out.Packs, CertificatePack{ID: pack.ID, Hosts: pack.Hosts, Certificates: pack.Certificates})
 		}
 	}
 	var total struct {
 		Enabled bool `json:"enabled"`
 	}
-	// The packs read, so the permission is there; a zone without
-	// Advanced Certificate Manager may refuse the Total TLS read, which
-	// means Total TLS is off.
+	// Preserve the historical coverage fallback while recording that the
+	// Total TLS setting could not be verified for publication review.
 	if err := c.call(ctx, token, http.MethodGet, "/zones/"+zone.ID+"/acm/total_tls", nil, &total); err != nil {
 		if ctx.Err() != nil {
 			return out, ctx.Err()
 		}
+		out.TotalTLSUnreadable = true
 		return out, nil
 	}
 	out.TotalTLS = total.Enabled

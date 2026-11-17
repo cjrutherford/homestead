@@ -1,0 +1,196 @@
+{
+  "app": "three-d",
+  "version": "0.1.0",
+  "title": "3D",
+  "archive": "three-d-source.tar.gz",
+  "sha256": "1dccd506f1e94f01b29602ee7bd34370c343203e8ca97949550bdccbb06b8aed",
+  "size": 11576110,
+  "subtree": "src/3d",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/3d/LICENSE",
+    "src/3d/index.html",
+    "src/3d/package-lock.json",
+    "src/3d/vite.config.ts",
+    "src/3d/tsconfig.json",
+    "src/3d/src/main.ts",
+    "src/3d/THIRD_PARTY_NOTICES.md"
+  ],
+  "index": "src/3d/index.html",
+  "sdk_tag": null,
+  "sdk_inject_before": "<script type=\"module\" src=\"/src/main.ts\"></script>",
+  "service_worker": null,
+  "add_files": [
+    {
+      "target": "src/3d/src/homestead/boot.ts",
+      "source": "3d-person-storage.ts"
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "auth.getUser",
+      "auth.isSignedIn",
+      "auth.signIn",
+      "kv.get",
+      "kv.set"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "ui.showFeedbackDialog",
+      "exit"
+    ],
+    "disabled": {
+      "ai": "no AI backend: the assistant is hidden and any remaining path fails closed",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan",
+      "python": "the Pyodide runtime would come from a public CDN; refused with a message"
+    }
+  },
+  "patches": [
+    {
+      "file": "src/3d/vite.config.ts",
+      "old": "  plugins: [puterLocalhost('3d')],\n",
+      "new": "  plugins: [puterLocalhost('3d')],\n  base: './',\n",
+      "why": "Build with relative asset URLs so the app works under /apps/three-d/ (the other Everything apps do the same upstream)."
+    },
+    {
+      "file": "src/3d/index.html",
+      "old": "<script type=\"module\" src=\"/src/main.ts\"></script>",
+      "new": "<script type=\"module\" src=\"/src/homestead/boot.ts\"></script>",
+      "why": "Start through the Homestead entry point: it asks the bridge who is signed in, moves settings to the person's own storage and gives browser databases a per-person name, then starts the app."
+    },
+    {
+      "file": "src/3d/src/main.ts",
+      "old": "restoreAssistant();\n",
+      "new": "",
+      "why": "The AI assistant is not offered: do not open its dock at startup."
+    },
+    {
+      "file": "src/3d/src/assistant/index.ts",
+      "old": "exec: () => toggleAssistant(),",
+      "new": "exec: () => void app.report('INFO', 'The AI assistant is not available on Homestead. Nothing you write is sent anywhere.'),",
+      "why": "The Toggle AI Assistant operator (F3 search) only says AI is not available; no panel is created and no request is made."
+    },
+    {
+      "file": "src/3d/src/ui/topbar.ts",
+      "old": "    { label: 'AI Assistant', icon: 'assistant', checked: assistantOpen(), op: 'wm.assistant_toggle' },\n    { separator: true },\n",
+      "new": "",
+      "why": "Hide the Window menu entry for the AI assistant."
+    },
+    {
+      "file": "src/3d/src/ui/topbar.ts",
+      "old": "    // feedback goes through Puter's own dialog, so it is offered where the app runs inside Puter\n    ...(window.self !== window.top || (globalThis as { puter?: unknown }).puter ? [{ label: 'Report a Bug', op: 'wm.url_open_preset', props: { type: 'BUG' } }] : []),\n",
+      "new": "",
+      "why": "Hide Report a Bug: it needs the hosted Puter feedback dialog, which does not exist on Homestead."
+    },
+    {
+      "file": "src/3d/src/ui/shell.ts",
+      "old": "      h(\n        'button',\n        {\n          class: { 'tb-assistant': true, on: assistantOpen() },\n          'data-tip': 'AI Assistant: build and change the scene by describing it',\n          'aria-pressed': assistantOpen() ? 'true' : 'false',\n          onclick: () => app.run('wm.assistant_toggle'),\n        },\n        icon('assistant'),\n        'Assistant',\n      ),\n",
+      "new": "",
+      "why": "Hide the AI Assistant button in the top bar."
+    },
+    {
+      "file": "src/3d/src/assistant/puter.ts",
+      "old": "const SDK_URL = 'https://js.puter.com/v2/';",
+      "new": "const SDK_URL = '';",
+      "why": "No hosted SDK address: the page never loads a script from js.puter.com."
+    },
+    {
+      "file": "src/3d/src/assistant/puter.ts",
+      "old": "    if (typeof document === 'undefined') return resolve(null);\n",
+      "new": "    if (typeof document === 'undefined' || !SDK_URL) return resolve(null);\n",
+      "why": "With no hosted SDK address nothing is loaded; the loader answers that Puter is not available."
+    },
+    {
+      "file": "src/3d/src/ops/wm_misc.ts",
+      "old": "app.report('WARNING', 'Feedback can be sent when the app runs in Puter')",
+      "new": "app.report('WARNING', 'Feedback is not available on Homestead')",
+      "why": "Puter wording."
+    },
+    {
+      "file": "src/3d/src/scripting/python.ts",
+      "old": "export const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;",
+      "new": "export const PYODIDE_INDEX_URL = 'not available on Homestead';",
+      "why": "Remove the public CDN address of the Python runtime (a third-party host)."
+    },
+    {
+      "file": "src/3d/src/scripting/python.ts",
+      "old": "  if (!prefs.use_online_access) {\n    const msg = 'Python needs to download its runtime, but online access is turned off (Preferences ▸ System ▸ Network).';",
+      "new": "  if (prefs.use_online_access || !prefs.use_online_access) {\n    const msg = 'Python is not available on Homestead: its runtime would be downloaded from a public web server. JavaScript scripting works without it.';",
+      "why": "Python is refused with a plain message instead of downloading a runtime from a third-party host."
+    },
+    {
+      "file": "src/3d/src/scripting/python.ts",
+      "old": "  load: () => import(/* @vite-ignore */ `${PYODIDE_INDEX_URL}pyodide.mjs`) as Promise<PyodideModule>,",
+      "new": "  load: () => Promise.reject(new Error('Python is not available on Homestead')) as Promise<PyodideModule>,",
+      "why": "No dynamic import of a runtime from a public address."
+    },
+    {
+      "file": "src/3d/src/scripting/python.ts",
+      "old": "  output.push(`Loading Python runtime… (Pyodide ${PYODIDE_VERSION} from cdn.jsdelivr.net)`, 'INFO');",
+      "new": "  output.push(`Loading Python runtime… (Pyodide ${PYODIDE_VERSION})`, 'INFO');",
+      "why": "Name no third-party host in the unreachable download message."
+    },
+    {
+      "file": "src/3d/THIRD_PARTY_NOTICES.md",
+      "old": "| Pyodide | 314.0.7 | MPL-2.0 (CPython: PSF License) | cdn.jsdelivr.net/pyodide/v314.0.7/full/ | Python scripting. Downloaded unmodified from the CDN the first time Python is used; JavaScript scripting works offline without it. |",
+      "new": "| Pyodide | 314.0.7 | MPL-2.0 (CPython: PSF License) | not shipped | Python scripting. Not available on Homestead (the runtime would be downloaded from a public web server); JavaScript scripting works offline without it. |",
+      "why": "The licence notice names the public CDN; Python is off on Homestead."
+    },
+    {
+      "file": "src/3d/src/scripting/runner.ts",
+      "old": "const sloppyEval = new Function('__scope', '__src', 'with (__scope) { return eval(__src); }') as (scope: object, src: string) => unknown;",
+      "new": "const sloppyEval = (_scope: object, _src: string): unknown => {\n  throw new Error(\"Scripts and the console cannot run on Homestead: the page's security policy does not allow running code typed into the app.\");\n};",
+      "why": "The console built a code evaluator when the module loaded; under the appliance policy (no unsafe-eval, ADR-057) that stopped the whole app from starting. The console now answers with a message instead."
+    },
+    {
+      "file": "src/3d/src/scripting/runner.ts",
+      "old": "    return { ok: false, error: `SyntaxError: ${msg}`, line: syntaxErrorLine(code, msg) };",
+      "new": "    return { ok: false, error: `${msg.includes('eval') ? \"Scripts and the console cannot run on Homestead: the page's security policy does not allow running code typed into the app.\" : `SyntaxError: ${msg}`}`, line: msg.includes('eval') ? undefined : syntaxErrorLine(code, msg) };",
+      "why": "Run Script builds a function from the script text, which the page policy refuses; say so instead of reporting a syntax error."
+    },
+    {
+      "file": "src/3d/src/ui/quicksetup.ts",
+      "old": "  try {\n    return localStorage.getItem(SETUP_KEY) !== '1';\n  } catch {\n    return false;\n  }\n",
+      "new": "  // Homestead (S467, ADR-059): no first-run Quick Setup page; the defaults apply.\n  return false;\n",
+      "why": "No first-run dialog (ADR-059): the Quick Setup page is never shown."
+    },
+    {
+      "file": "src/3d/src/app/prefs.ts",
+      "old": "  show_splash: true,",
+      "new": "  show_splash: false,",
+      "why": "No startup splash by default (ADR-059): the app opens straight to the viewport; the person can turn it on in Preferences."
+    },
+    {
+      "file": "src/3d/src/ui/topbar.ts",
+      "old": "  if (fresh && (prefs.show_splash || quickSetupPending())) showSplash({ startup: true });",
+      "new": "  // Homestead (S467, ADR-059): no startup splash, whatever an earlier visit saved.\n  void fresh;\n  void quickSetupPending;",
+      "why": "No first-run dialog (ADR-059): a person who saved 'Show at startup' before this change would still get the splash on every load; it is never opened at startup."
+    }
+  ],
+  "source_offer": {
+    "license": "AGPL-3.0-only",
+    "license_url": "https://www.gnu.org/licenses/agpl-3.0.html",
+    "repository": "https://github.com/HeyPuter/everything",
+    "commit": "e7d07c48546ef0650a8f3ab94ae82b8b50d3646a",
+    "tarball": true,
+    "link_offset": {
+      "left": "40%",
+      "bottom": "4px"
+    }
+  }
+}

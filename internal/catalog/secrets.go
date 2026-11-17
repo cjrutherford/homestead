@@ -2,10 +2,12 @@ package catalog
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -37,10 +39,25 @@ var validSecretName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // environment variable that receives the in-container PATH of the file
 // (the images' own `*_FILE` convention), or, with URI set, a
 // `file://` URI of it (Authentik's convention). Never the value.
+//
+// Export covers the images that have no `*_FILE` input at all (S342,
+// ADR-052): Env keeps carrying the path, and the generated
+// secret-entrypoint supervisor exports the value into Env without its
+// `_FILE` suffix at container start. The value therefore exists in the
+// container's environment at runtime — the trade the owner accepted to
+// make those apps configurable at all — but never in Compose YAML, in
+// `docker inspect` before start, or in any file Homestead writes.
 type SecretConsumer struct {
 	Service string
 	Env     string
 	URI     bool
+	Export  bool
+	// Path (S357) mounts the secret file at this absolute container path
+	// instead of handing the app a variable holding its path: for apps
+	// that read a configuration file they find by name (Vikunja's
+	// /etc/vikunja/config.yml) and have no *_FILE form for it. Exclusive
+	// with Env; the mount is read-only, owned like any secret file.
+	Path string
 }
 
 // SecretDecl declares one secret-backed variable. Name is the logical
@@ -58,7 +75,21 @@ type SecretDecl struct {
 	Immutable bool
 	Reveal    bool
 	Note      string
+	// Initial (S413) is a fixed, non-secret starting value stored
+	// instead of a generated one. For a derived secret file an adapter
+	// renders at sign-in time (EnvOIDC.SecretFile): before sign-in is on
+	// it is the app's "nothing configured" value. Needs Immutable.
+	Initial string
+	// Encoding (S366) names the format a generated value must take, for
+	// an app that refuses the default 64 hex characters. Empty is the
+	// default; SecretEncodingLaravelKey is a Laravel APP_KEY. Not with
+	// Initial.
+	Encoding string
 }
+
+// SecretEncodingLaravelKey generates "base64:" and 32 random bytes, the
+// APP_KEY form Laravel's AES-256 encrypter accepts (BookStack).
+const SecretEncodingLaravelKey = "laravel-key"
 
 // SecretStoreName is the secret-store row holding a package secret.
 // The `app_` prefix marks app-owned secrets, which configuration export
@@ -76,6 +107,35 @@ func secretKey(service, name string) string {
 
 func secretContainerPath(key string) string { return "/run/secrets/" + key }
 
+// composeSecretRef is one service secret reference: the bare key, which
+// mounts at /run/secrets/<key>, or with a target the long form mounting
+// the file at that path (S357).
+type composeSecretRef struct {
+	Key    string
+	Target string
+}
+
+func (r composeSecretRef) MarshalYAML() (any, error) {
+	if r.Target == "" {
+		return r.Key, nil
+	}
+	return map[string]string{"source": r.Key, "target": r.Target}, nil
+}
+
+func (r composeSecretRef) node() *yaml.Node {
+	if r.Target == "" {
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: r.Key}
+	}
+	m := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	setScalar(m, "source", r.Key)
+	setScalar(m, "target", r.Target)
+	return m
+}
+
+func (c SecretConsumer) ref(key string) composeSecretRef {
+	return composeSecretRef{Key: key, Target: c.Path}
+}
+
 func (c SecretConsumer) value(key string) string {
 	if c.URI {
 		return "file://" + secretContainerPath(key)
@@ -87,8 +147,11 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 	seen := map[string]bool{}
 	envs := map[string]bool{}
 	envSvc := map[string]map[string]string{}
+	entrypoints := map[string]bool{}
+	exported := map[string]string{}
 	for _, svc := range m.Services {
 		envSvc[svc.Name] = svc.Environment
+		entrypoints[svc.Name] = len(svc.Entrypoint) > 0
 	}
 	for _, decl := range m.Secrets {
 		if !validSecretName.MatchString(decl.Name) {
@@ -104,12 +167,39 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 			return fmt.Errorf("catalog: duplicate secret %q", decl.Name)
 		}
 		seen[decl.Name] = true
+		if decl.Initial != "" && (!decl.Immutable || decl.Reveal || strings.ContainsAny(decl.Initial, "\r\n")) {
+			return fmt.Errorf("catalog: secret %q has an initial value, so it must be immutable, not revealed and one line", decl.Name)
+		}
+		switch decl.Encoding {
+		case "":
+		case SecretEncodingLaravelKey:
+			if decl.Initial != "" || decl.Reveal || m.Database != nil && m.Database.PasswordSecret == decl.Name {
+				return fmt.Errorf("catalog: secret %q has an encoding, so it takes no initial value, is not revealed and is not the database password", decl.Name)
+			}
+		default:
+			return fmt.Errorf("catalog: secret %q encoding %q must be %q or empty", decl.Name, decl.Encoding, SecretEncodingLaravelKey)
+		}
 		if len(decl.Consumers) == 0 && !m.HeldSecret(decl.Name) {
 			return fmt.Errorf("catalog: secret %q needs at least one consumer", decl.Name)
 		}
 		for _, c := range decl.Consumers {
 			if !services[c.Service] {
 				return fmt.Errorf("catalog: secret %q consumer service %q unknown", decl.Name, c.Service)
+			}
+			if c.Path != "" {
+				if c.Env != "" || c.URI || c.Export {
+					return fmt.Errorf("catalog: secret %q consumer path excludes env, uri and export", decl.Name)
+				}
+				if clean := path.Clean(c.Path); clean != c.Path || !strings.HasPrefix(c.Path, "/") || c.Path == "/" ||
+					strings.HasPrefix(c.Path, "/run/secrets/") || strings.ContainsAny(c.Path, " :,\t\r\n") {
+					return fmt.Errorf("catalog: secret %q consumer path %q must be a clean absolute path outside /run/secrets", decl.Name, c.Path)
+				}
+				id := c.Service + "\x00" + c.Path
+				if envs[id] {
+					return fmt.Errorf("catalog: service %q path %q wired twice", c.Service, c.Path)
+				}
+				envs[id] = true
+				continue
 			}
 			if !validEnvKey.MatchString(c.Env) {
 				return fmt.Errorf("catalog: secret %q consumer variable %q invalid", decl.Name, c.Env)
@@ -122,14 +212,51 @@ func validateSecrets(m Manifest, services map[string]bool) error {
 			if _, plain := envSvc[c.Service][c.Env]; plain {
 				return fmt.Errorf("catalog: service %q variable %q is both plain and secret-backed", c.Service, c.Env)
 			}
+			if !c.Export {
+				continue
+			}
+			if c.URI {
+				return fmt.Errorf("catalog: secret %q consumer %q cannot export a URI", decl.Name, c.Env)
+			}
+			if !strings.HasSuffix(c.Env, "_FILE") {
+				return fmt.Errorf("catalog: secret %q export needs a *_FILE variable, got %q", decl.Name, c.Env)
+			}
+			target := strings.TrimSuffix(c.Env, "_FILE")
+			if !validEnvKey.MatchString(target) {
+				return fmt.Errorf("catalog: secret %q export target %q invalid", decl.Name, target)
+			}
+			if prev, dup := exported[c.Service+"\x00"+target]; dup {
+				return fmt.Errorf("catalog: service %q exports %q for both %q and %q", c.Service, target, prev, decl.Name)
+			}
+			exported[c.Service+"\x00"+target] = decl.Name
+			if _, plain := envSvc[c.Service][target]; plain {
+				return fmt.Errorf("catalog: service %q exports %q but also sets it plainly", c.Service, target)
+			}
+			if !entrypoints[c.Service] {
+				return fmt.Errorf("catalog: service %q exports secret %q but declares no entrypoint", c.Service, decl.Name)
+			}
 		}
 	}
 	if m.Database != nil && m.Database.PasswordSecret != "" {
 		if !seen[m.Database.PasswordSecret] {
 			return fmt.Errorf("catalog: database password secret %q is not declared", m.Database.PasswordSecret)
 		}
-		if m.Database.Kind != DatabasePostgres {
-			return fmt.Errorf("catalog: only postgres takes a password secret")
+		if !m.Database.Kind.Server() {
+			return fmt.Errorf("catalog: only server databases take a password secret")
+		}
+	}
+	for _, svc := range m.Services {
+		if len(svc.Entrypoint) == 0 {
+			continue
+		}
+		exports := false
+		for key := range exported {
+			if strings.HasPrefix(key, svc.Name+"\x00") {
+				exports = true
+			}
+		}
+		if !exports {
+			return fmt.Errorf("catalog: service %q declares an entrypoint but exports no secret", svc.Name)
 		}
 	}
 	return nil
@@ -144,6 +271,10 @@ type SecretFile struct {
 	UID, GID  *int
 	// DatabasePassword marks the manifest's database password file.
 	DatabasePassword bool
+	// Initial is the declaration's fixed starting value (S413).
+	Initial string
+	// Encoding is the declaration's generated-value format (S366).
+	Encoding string
 }
 
 // SecretFilesFor lists the files a manifest needs, sorted by key, with
@@ -170,11 +301,91 @@ func SecretFilesFor(m Manifest) []SecretFile {
 			o := owners[c.Service]
 			out = append(out, SecretFile{Key: key, Service: c.Service, Name: decl.Name,
 				StoreName: SecretStoreName(m.Name, decl.Name), UID: o[0], GID: o[1],
-				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name})
+				DatabasePassword: m.Database != nil && m.Database.PasswordSecret == decl.Name, Initial: decl.Initial, Encoding: decl.Encoding})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
+}
+
+// EntrypointName is the in-container path of the supervising entrypoint
+// the generated Compose document sets as ENTRYPOINT (S342, ADR-052).
+const EntrypointName = "/homestead/secret-entrypoint.sh"
+
+// EntrypointScript is one generated supervisor for a service that
+// exports secret values into the environment. Body holds paths, never
+// values, so the script is safe to inspect and back up.
+type EntrypointScript struct {
+	Service string
+	// File is the stack-relative file name the Compose document mounts.
+	File string
+	Body string
+}
+
+// EntrypointFile names a service's supervisor script inside the stack
+// directory. One file per service keeps each generated document
+// readable on its own.
+func EntrypointFile(service string) string {
+	return "secret-entrypoint." + strings.NewReplacer("-", "_", ".", "_").Replace(service) + ".sh"
+}
+
+// secretPair ties a secret declaration name to the consumer that
+// exports it.
+type secretPair struct {
+	decl     string
+	consumer SecretConsumer
+}
+
+// EntrypointScriptsFor renders the supervisors a manifest needs, sorted
+// by service. A service appears only when it exports a secret.
+func EntrypointScriptsFor(m Manifest) []EntrypointScript {
+	byService := map[string][]secretPair{}
+	for _, decl := range m.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Export {
+				byService[c.Service] = append(byService[c.Service], secretPair{decl.Name, c})
+			}
+		}
+	}
+	names := make([]string, 0, len(byService))
+	for name := range byService {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]EntrypointScript, 0, len(names))
+	for _, name := range names {
+		out = append(out, EntrypointScript{
+			Service: name,
+			File:    EntrypointFile(name),
+			Body:    entrypointBody(name, byService[name]),
+		})
+	}
+	return out
+}
+
+// entrypointBody renders one supervisor: for each exported secret, fail
+// closed when the file is unreadable, read it into the target variable,
+// export it, and drop the path variable so the container sees exactly
+// what the image expects.
+func entrypointBody(service string, pairs []secretPair) string {
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\n")
+	b.WriteString("# Generated by Homestead (S342, ADR-052). Exports secret files into the\n")
+	b.WriteString("# environment for images that read only plaintext variables. This file\n")
+	b.WriteString("# holds paths, never values. Regeneration overwrites edits.\n")
+	b.WriteString("set -eu\n")
+	for _, p := range pairs {
+		path := secretContainerPath(secretKey(service, p.decl))
+		target := strings.TrimSuffix(p.consumer.Env, "_FILE")
+		fmt.Fprintf(&b, "if [ ! -r %s ]; then\n", path)
+		fmt.Fprintf(&b, "  echo \"homestead: missing secret file for %s\" >&2\n", target)
+		b.WriteString("  exit 1\nfi\n")
+		fmt.Fprintf(&b, "%s=\"$(cat %s)\"\n", target, path)
+		fmt.Fprintf(&b, "export %s\n", target)
+		fmt.Fprintf(&b, "unset %s\n", p.consumer.Env)
+	}
+	b.WriteString("exec \"$@\"\n")
+	return b.String()
 }
 
 // SecretStore is the slice of the secret store this package needs.
@@ -217,17 +428,43 @@ func generateSecretValue() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+// generateEncodedValue makes a value in a declared encoding (S366).
+func generateEncodedValue(encoding string) (string, error) {
+	if encoding != SecretEncodingLaravelKey {
+		return generateSecretValue()
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("catalog: generate secret: %w", err)
+	}
+	return "base64:" + base64.StdEncoding.EncodeToString(buf), nil
+}
+
 // EnsureSecrets generates a strong value into the store for every
 // declared secret that has none. Existing values are never touched.
 func EnsureSecrets(src SecretStore, m Manifest) error {
 	var names []string
+	initial := map[string]string{}
 	for _, decl := range m.Secrets {
 		names = append(names, SecretStoreName(m.Name, decl.Name))
+		if decl.Initial != "" {
+			initial[SecretStoreName(m.Name, decl.Name)] = decl.Initial
+		}
+		if decl.Encoding != "" {
+			// Used only when the store has no value yet.
+			v, err := generateEncodedValue(decl.Encoding)
+			if err != nil {
+				return err
+			}
+			initial[SecretStoreName(m.Name, decl.Name)] = v
+		}
 	}
-	return ensureNames(src, names)
+	return ensureNamesInitial(src, names, initial)
 }
 
-func ensureNames(src SecretStore, names []string) error {
+func ensureNames(src SecretStore, names []string) error { return ensureNamesInitial(src, names, nil) }
+
+func ensureNamesInitial(src SecretStore, names []string, initial map[string]string) error {
 	if len(names) == 0 {
 		return nil
 	}
@@ -240,15 +477,37 @@ func ensureNames(src SecretStore, names []string) error {
 		} else if !errors.Is(err, secret.ErrNotFound) {
 			return fmt.Errorf("catalog: read secret %q: %w", name, err)
 		}
-		value, err := generateSecretValue()
-		if err != nil {
-			return err
+		value, ok := initial[name]
+		if !ok {
+			var err error
+			if value, err = generateSecretValue(); err != nil {
+				return err
+			}
 		}
 		if err := src.SetApp(name, value); err != nil {
 			return fmt.Errorf("catalog: store secret %q: %w", name, err)
 		}
 	}
 	return nil
+}
+
+// ensureFileSecrets generates the values the files' secrets lack in the
+// store, using a declaration's fixed starting value where it has one.
+func ensureFileSecrets(src SecretStore, files []SecretFile) error {
+	initial := map[string]string{}
+	for _, f := range files {
+		if f.Initial != "" {
+			initial[f.StoreName] = f.Initial
+		}
+		if f.Encoding != "" {
+			v, err := generateEncodedValue(f.Encoding)
+			if err != nil {
+				return err
+			}
+			initial[f.StoreName] = v
+		}
+	}
+	return ensureNamesInitial(src, storeNames(files), initial)
 }
 
 func storeNames(files []SecretFile) []string {
@@ -267,6 +526,15 @@ func storeNames(files []SecretFile) []string {
 // in tests (the daemon runs as root; tests do not). It works on the open
 // descriptor, so a swapped path cannot redirect it.
 var chownSecret = func(f *os.File, uid, gid int) error { return f.Chown(uid, gid) }
+
+// SetSecretChown replaces the ownership step and returns the restore
+// function: a seam for tests of other packages that write secret files
+// for a service with a non-root data owner, run by a non-root user.
+func SetSecretChown(fn func(*os.File, int, int) error) (restore func()) {
+	old := chownSecret
+	chownSecret = fn
+	return func() { chownSecret = old }
+}
 
 // prepareSecretsDir creates dir/secrets 0700 and refuses a symlink or
 // non-directory in its place; the mode is set on the open descriptor,

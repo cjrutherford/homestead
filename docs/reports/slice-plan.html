@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homestead — Slice Plan S341–S381</title>
+<style>
+  :root{
+    --bg:#0e100f;
+    --panel:#151917;
+    --panel2:#1a1f1c;
+    --line:#272d29;
+    --text:#e9e5d8;
+    --dim:#8b938a;
+    --dim2:#5f665f;
+    --amber:#f0a422;
+    --amber-dim:#8a5f14;
+    --cyan:#5cb8c4;
+    --red:#d2583c;
+    --green:#7fae6a;
+    --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Roboto Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:var(--mono);font-size:13.5px;line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(90% 60% at 50% -10%,rgba(240,164,34,.07),transparent 70%),
+      repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0 1px,transparent 1px 4px);
+  }
+  .wrap{max-width:1200px;margin:0 auto;padding:0 28px}
+
+  /* ---------- masthead ---------- */
+  header{padding:30px 0 0;border-bottom:1px solid var(--line)}
+  .topline{display:flex;justify-content:space-between;gap:20px;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim2)}
+  .topline b{color:var(--amber);font-weight:500}
+  h1{
+    margin:42px 0 0;font-size:clamp(2rem,4.6vw,3.6rem);
+    font-weight:400;letter-spacing:-.02em;line-height:1;
+  }
+  h1 span{color:var(--amber)}
+  .lede{max-width:64ch;color:var(--dim);margin:18px 0 0;font-size:.95rem;line-height:1.6}
+  .counters{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:34px 0 0}
+  .counter{padding:18px 20px 20px;border-right:1px solid var(--line)}
+  .counter:last-child{border-right:0}
+  .counter b{display:block;font-size:2.1rem;font-weight:400;letter-spacing:-.03em;line-height:1;color:var(--text)}
+  .counter b i{font-style:normal;color:var(--amber)}
+  .counter span{display:block;margin-top:8px;font-size:9.5px;letter-spacing:.17em;text-transform:uppercase;color:var(--dim2)}
+
+  /* ---------- filters ---------- */
+  .filters{display:flex;flex-wrap:wrap;gap:8px;padding:22px 0 6px}
+  .filters button{
+    font:inherit;font-size:10px;letter-spacing:.13em;text-transform:uppercase;
+    background:none;color:var(--dim);border:1px solid var(--line);
+    padding:5px 11px;cursor:pointer;transition:.15s;
+  }
+  .filters button:hover{color:var(--text);border-color:var(--dim2)}
+  .filters button[aria-pressed="true"]{color:var(--bg);background:var(--amber);border-color:var(--amber)}
+
+  /* ---------- board ---------- */
+  .board{margin:14px 0 0;border:1px solid var(--line);background:var(--panel)}
+  .board-head{
+    display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+    padding:14px 18px;border-bottom:1px solid var(--line);background:var(--panel2);
+  }
+  .board-head h2{font-size:11px;letter-spacing:.22em;text-transform:uppercase;font-weight:500;margin:0;color:var(--dim)}
+  .board-head .tag{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber-dim)}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  thead th{
+    text-align:left;font-weight:400;font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--dim2);padding:10px 14px;border-bottom:1px solid var(--line);background:#121514;
+  }
+  tbody tr{border-bottom:1px solid #1e2320}
+  tbody tr:last-child{border-bottom:0}
+  tbody tr:hover{background:#1b201d}
+  tbody tr.grp td{
+    padding:18px 14px 7px;font-size:9px;letter-spacing:.2em;text-transform:uppercase;
+    color:var(--amber-dim);background:#121514;border-bottom:1px solid var(--line);
+  }
+  tbody tr.grp:first-child td{padding-top:12px}
+  td{padding:11px 14px;vertical-align:top}
+  td.id{font-size:11.5px;color:var(--amber);letter-spacing:.04em;white-space:nowrap}
+  td.title{color:var(--text)}
+  td.title em{display:block;font-style:normal;font-size:10.5px;color:var(--dim2);margin-top:3px;letter-spacing:.02em}
+  td.dep{font-size:10.5px;color:var(--dim);letter-spacing:.02em}
+  td.gate{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim2);white-space:nowrap}
+  .pill{display:inline-block;padding:2px 7px;border:1px solid currentColor;font-size:9px;letter-spacing:.1em}
+  .pill.gate-a{color:var(--red)}
+  .pill.gate-b{color:var(--amber)}
+  .pill.gate-c{color:var(--dim)}
+  .pill.crit{color:var(--red);border-color:var(--red)}
+  .pill.spike{color:var(--amber);border-color:var(--amber);background:rgba(240,164,34,.08)}
+  tr[data-phase]{transition:background .12s}
+  tr.hide{display:none}
+
+  /* ---------- critical path ---------- */
+  .path{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:26px 0 0;border:1px solid var(--line);background:var(--panel)}
+  .node{padding:14px 16px;border-right:1px solid var(--line);flex:1 1 0;min-width:120px}
+  .node:last-child{border-right:0}
+  .node b{display:block;font-size:11px;color:var(--amber);letter-spacing:.04em}
+  .node span{display:block;margin-top:5px;font-size:10px;color:var(--dim);line-height:1.35}
+
+  /* ---------- sections ---------- */
+  section{padding:54px 0 10px}
+  h2.sec{font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim);font-weight:500;margin:0 0 8px}
+  h2.sec b{color:var(--amber);font-weight:500}
+  .note{color:var(--dim);max-width:72ch;font-size:.9rem;margin:0 0 22px}
+
+  /* ---------- itinerary ---------- */
+  ol.route{list-style:none;margin:0;padding:0;counter-reset:step}
+  ol.route li{
+    counter-increment:step;display:grid;grid-template-columns:54px 120px 1fr;gap:16px;
+    padding:13px 0;border-bottom:1px solid #1e2320;align-items:baseline;
+  }
+  ol.route li::before{
+    content:counter(step,decimal-leading-zero);color:var(--dim2);font-size:10px;letter-spacing:.1em;
+  }
+  ol.route .rid{color:var(--amber);font-size:11px;letter-spacing:.04em}
+  ol.route .rwhat{color:var(--text);font-size:12.5px}
+  ol.route .rwhat em{font-style:normal;color:var(--dim2);font-size:10.5px;margin-left:8px}
+  ol.route li.alt{background:linear-gradient(90deg,rgba(92,184,196,.05),transparent 60%)}
+  ol.route li.alt .rid{color:var(--cyan)}
+
+  /* ---------- dod ---------- */
+  .dod{display:grid;grid-template-columns:1fr 1fr;gap:0 34px}
+  .dod div{padding:11px 0;border-bottom:1px solid #1e2320;display:grid;grid-template-columns:18px 1fr;gap:10px;align-items:start}
+  .dod .mk{color:var(--green);font-size:11px;line-height:1.5}
+  .dod p{margin:0;font-size:11.5px;color:var(--dim);line-height:1.45}
+
+  /* ---------- adr ---------- */
+  .adr{display:grid;grid-template-columns:110px 90px 1fr;gap:0}
+  .adr-row{display:contents}
+  .adr div{padding:12px 14px;border-bottom:1px solid #1e2320;font-size:11.5px;color:var(--dim)}
+  .adr .n{color:var(--amber);letter-spacing:.04em}
+  .adr .s{color:var(--dim2)}
+  .adr .d{color:var(--text)}
+
+  /* ---------- unscheduled ---------- */
+  .dim-block{border:1px solid var(--line);background:var(--panel);padding:20px 22px}
+  .dim-block h3{margin:0 0 6px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim2);font-weight:500}
+  .dim-block p{margin:0 0 12px;font-size:11.5px;color:var(--dim);line-height:1.5}
+  .dim-block code{color:#b8b2a2;background:#1b201d;padding:1px 5px;font-size:11px}
+  .dim-block p:last-child{margin-bottom:0}
+
+  footer{border-top:1px solid var(--line);margin-top:60px;padding:22px 0 60px}
+  footer .wrap{display:flex;justify-content:space-between;gap:20px;font-size:9.5px;letter-spacing:.17em;text-transform:uppercase;color:var(--dim2)}
+
+  .rv{opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease}
+  .rv.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none}}
+
+  @media (max-width:880px){
+    .wrap{padding:0 18px}
+    .counters{grid-template-columns:1fr 1fr}
+    .counter:nth-child(2){border-right:0}
+    .counter:nth-child(1),.counter:nth-child(2){border-bottom:1px solid var(--line)}
+    td.dep{display:none}
+    thead th:nth-child(3){display:none}
+    ol.route li{grid-template-columns:40px 90px 1fr;gap:10px}
+    .dod{grid-template-columns:1fr}
+    .adr{grid-template-columns:86px 64px 1fr}
+  }
+  @media print{
+    body{background:#fff;color:#111}
+    .filters{display:none}
+    .rv{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="topline">
+      <span><b>HOMESTEAD</b> / SLICE PLAN</span>
+      <span>2026-10-23 · S341 → S381</span>
+    </div>
+    <h1>The remaining work<span>.</span></h1>
+    <p class="lede">Forty-one slices across two tracks: the Docker catalog expansion and the Everything-app repackaging. IDs are assigned so the tracks cannot collide. Each slice writes its own contract when it is scheduled — this is the schedule, not the contract.</p>
+    <div class="counters">
+      <div class="counter"><b><i>41</i></b><span>slices total</span></div>
+      <div class="counter"><b>25</b><span>catalog track</span></div>
+      <div class="counter"><b>15</b><span>everything track</span></div>
+      <div class="counter"><b>4</b><span>new ADRs</span></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="filters">
+    <button data-f="all" aria-pressed="true">All</button>
+    <button data-f="foundation" aria-pressed="false">Foundations</button>
+    <button data-f="wave1" aria-pressed="false">Wave 1</button>
+    <button data-f="wave2" aria-pressed="false">Wave 2</button>
+    <button data-f="wave3" aria-pressed="false">Wave 3</button>
+    <button data-f="bridge" aria-pressed="false">Bridge</button>
+    <button data-f="apps" aria-pressed="false">Everything apps</button>
+  </div>
+
+  <!-- ===================== TRACK A ===================== -->
+  <div class="board rv">
+    <div class="board-head">
+      <h2>Track A · Docker catalog</h2>
+      <span class="tag">25 slices · ends S366</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:66px">ID</th>
+        <th>Slice</th>
+        <th style="width:150px">Depends on</th>
+        <th style="width:112px">Gate</th>
+      </tr></thead>
+      <tbody>
+
+        <tr class="grp" data-phase="foundation"><td colspan="4">Foundations</td></tr>
+        <tr data-phase="foundation">
+          <td class="id">S341</td>
+          <td class="title">Catalog integration contract<em>integrations metadata, derived levels, load gates, "Works with"</em></td>
+          <td class="dep">S150–S161, S202–S204, S276</td>
+          <td class="gate"><span class="pill gate-a">scheduled</span></td>
+        </tr>
+        <tr data-phase="foundation">
+          <td class="id">S342</td>
+          <td class="title">OIDC client actuation and secret delivery<em>client creation, credential write, supervised entrypoint export</em></td>
+          <td class="dep">S341, S202, S204, S266</td>
+          <td class="gate"><span class="pill crit">F1 · critical</span></td>
+        </tr>
+        <tr data-phase="foundation">
+          <td class="id">S343</td>
+          <td class="title">GHCR update discovery<em>token-based tag discovery beside the Docker Hub path</em></td>
+          <td class="dep">S190, S263</td>
+          <td class="gate"><span class="pill gate-b">F3</span></td>
+        </tr>
+        <tr data-phase="foundation">
+          <td class="id">S344</td>
+          <td class="title">Catalog bundles and capacity<em>Starter / Family / Media / Full with combined checks</em></td>
+          <td class="dep">S152, S154, S172, S341</td>
+          <td class="gate"><span class="pill gate-b">F5</span></td>
+        </tr>
+
+        <tr class="grp" data-phase="wave1"><td colspan="4">Wave 1 · everyday suite</td></tr>
+        <tr data-phase="wave1"><td class="id">S345</td><td class="title">vaultwarden<em>owner signup, admin page off, local/overlay</em></td><td class="dep">S342</td><td class="gate">gated on F1</td></tr>
+        <tr data-phase="wave1"><td class="id">S346</td><td class="title">paperless-ngx<em>postgres + redis, shared scans, OCR languages</em></td><td class="dep">S342, S343, S276</td><td class="gate">gated on F1, F3</td></tr>
+        <tr data-phase="wave1"><td class="id">S347</td><td class="title">gitea<em>ROOT_URL from route host, HTTPS only</em></td><td class="dep">S342</td><td class="gate">gated on F1</td></tr>
+        <tr data-phase="wave1"><td class="id">S348</td><td class="title">freshrss<em>debian image so OIDC exists</em></td><td class="dep">S342, S343</td><td class="gate">gated on F1, F3</td></tr>
+        <tr data-phase="wave1"><td class="id">S349</td><td class="title">linkding<em>simplest package in the wave</em></td><td class="dep">S342</td><td class="gate">gated on F1</td></tr>
+        <tr data-phase="wave1"><td class="id">S350</td><td class="title">mealie<em>GHCR image</em></td><td class="dep">S342, S343</td><td class="gate">gated on F1, F3</td></tr>
+        <tr data-phase="wave1"><td class="id">S351</td><td class="title">uptime-kuma<em>documented local-auth exception</em></td><td class="dep">S342</td><td class="gate">gated on F1</td></tr>
+
+        <tr class="grp" data-phase="foundation"><td colspan="4">Second foundation</td></tr>
+        <tr data-phase="foundation">
+          <td class="id">S352</td>
+          <td class="title">MariaDB / MySQL backup export<em>crash-consistent dump, restore path, tests</em></td>
+          <td class="dep">S180, S266</td>
+          <td class="gate"><span class="pill gate-b">F2</span></td>
+        </tr>
+
+        <tr class="grp" data-phase="wave2"><td colspan="4">Wave 2 · family library</td></tr>
+        <tr data-phase="wave2"><td class="id">S353</td><td class="title">audiobookshelf<em>bulk audiobook library</em></td><td class="dep">S343</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S354</td><td class="title">navidrome<em>local-auth exception, shared music mount</em></td><td class="dep">S276</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S355</td><td class="title">komga<em>JVM heap cap in the manifest</em></td><td class="dep">S341</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S356</td><td class="title">calibre-web-automated<em>community image, OIDC re-verified</em></td><td class="dep">S341</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S357</td><td class="title">vikunja<em>CalDAV against Nextcloud</em></td><td class="dep">S341</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S358</td><td class="title">actual-budget<em>OIDC verified or local-only exception</em></td><td class="dep">S276</td><td class="gate">—</td></tr>
+        <tr data-phase="wave2"><td class="id">S359</td><td class="title">memos<em>complements Nextcloud Notes</em></td><td class="dep">S341</td><td class="gate">—</td></tr>
+
+        <tr class="grp" data-phase="wave3"><td colspan="4">Third foundation, then Wave 3</td></tr>
+        <tr data-phase="wave3">
+          <td class="id">S360</td>
+          <td class="title">Community-image trust policy<em>publishers, multi-arch, pinned tags, provenance</em></td>
+          <td class="dep">S279</td>
+          <td class="gate"><span class="pill crit">F4 · critical</span></td>
+        </tr>
+        <tr data-phase="wave3"><td class="id">S361</td><td class="title">prowlarr<em>indexer manager, local only</em></td><td class="dep">S360</td><td class="gate">gated on F4</td></tr>
+        <tr data-phase="wave3"><td class="id">S362</td><td class="title">sonarr<em>library paths must match Jellyfin</em></td><td class="dep">S360, S341</td><td class="gate">gated on F4</td></tr>
+        <tr data-phase="wave3"><td class="id">S363</td><td class="title">radarr<em>same shape as Sonarr</em></td><td class="dep">S360, S341</td><td class="gate">gated on F4</td></tr>
+        <tr data-phase="wave3"><td class="id">S364</td><td class="title">sabnzbd<em>owner supplies the provider</em></td><td class="dep">S360</td><td class="gate">gated on F4</td></tr>
+        <tr data-phase="wave3"><td class="id">S365</td><td class="title">seerr<em>Jellyfin login, LAN only</em></td><td class="dep">S341</td><td class="gate">—</td></tr>
+        <tr data-phase="wave3"><td class="id">S366</td><td class="title">bookstack<em>MariaDB export, OIDC, LinuxServer image</em></td><td class="dep">S352, S360</td><td class="gate">gated on F2, F4</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== TRACK B ===================== -->
+  <div class="board rv" style="margin-top:26px">
+    <div class="board-head">
+      <h2>Track B · Everything apps</h2>
+      <span class="tag">15 slices · ends S381</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:66px">ID</th>
+        <th>Slice</th>
+        <th style="width:150px">Depends on</th>
+        <th style="width:112px">Gate</th>
+      </tr></thead>
+      <tbody>
+
+        <tr class="grp" data-phase="bridge"><td colspan="4">Bridge and build pipeline</td></tr>
+        <tr data-phase="bridge">
+          <td class="id">S367</td>
+          <td class="title">Puter bridge and app build pipeline<em>pin · patch · bridge · actual bridge tests · ADR-053</em></td>
+          <td class="dep">S279, S341</td>
+          <td class="gate"><span class="pill spike">spike exit</span></td>
+        </tr>
+
+        <tr class="grp" data-phase="apps"><td colspan="4">Planned candidates (bridge gate pending)</td></tr>
+        <tr data-phase="apps"><td class="id">S368</td><td class="title">tasks<em>pilot — auth, KV, files, offline sync and sharing</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S369</td><td class="title">projects<em>projects and file storage</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S370</td><td class="title">records<em>tables and forms</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S371</td><td class="title">notes<em>AGPL · AI assist disabled</em></td><td class="dep">S367</td><td class="gate">AGPL</td></tr>
+        <tr data-phase="apps"><td class="id">S372</td><td class="title">contacts<em>kv and ui heavy</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S373</td><td class="title">inventory<em>household inventory</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S374</td><td class="title">time-tracking<em>fs and kv</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S375</td><td class="title">circuits<em>one fs call</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S376</td><td class="title">parametric<em>one fs, one ai (disabled)</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S377</td><td class="title">3d<em>IndexedDB + File System Access API</em></td><td class="dep">S367</td><td class="gate">AGPL · chromium</td></tr>
+        <tr data-phase="apps"><td class="id">S378</td><td class="title">solitaire<em>245 KB, proves the cheap path</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+
+        <tr class="grp" data-phase="extras"><td colspan="4">Cheap extras</td></tr>
+        <tr data-phase="apps"><td class="id">S379</td><td class="title">sudoku<em>same shape as solitaire</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S380</td><td class="title">expense<em>local only; no AI OCR claim</em></td><td class="dep">S367</td><td class="gate">—</td></tr>
+        <tr data-phase="apps"><td class="id">S381</td><td class="title">api-client<em>needs the puter.net extension</em></td><td class="dep">S367</td><td class="gate">bridge +net</td></tr>
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== CRITICAL PATH ===================== -->
+  <section class="rv">
+    <h2 class="sec">The <b>critical path</b></h2>
+    <p class="note">Twenty-five slices that cannot be reordered without breaking an owner gate. Wave 1 waits on F1, Wave 3 waits on F4 and F2. Track B is the only place to win time.</p>
+    <div class="path">
+      <div class="node"><b>S341</b><span>contract</span></div>
+      <div class="node"><b>S342</b><span>F1 gate</span></div>
+      <div class="node"><b>S344</b><span>F5 bundles</span></div>
+      <div class="node"><b>S345–92</b><span>wave 1</span></div>
+      <div class="node"><b>S352</b><span>F2</span></div>
+      <div class="node"><b>S353–300</b><span>wave 2</span></div>
+      <div class="node"><b>S360</b><span>F4</span></div>
+      <div class="node"><b>S361–07</b><span>wave 3</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== ITINERARY ===================== -->
+  <section class="rv">
+    <h2 class="sec">Recommended <b>interleave</b></h2>
+    <p class="note">S367 lands third on purpose. It is the only slice that can invalidate an entire track — finding that out after twenty catalog packages would be an expensive discovery.</p>
+    <ol class="route">
+      <li><span class="rid">S341</span><span class="rwhat">Catalog integration contract<em>done</em></span></li>
+      <li><span class="rid">S342</span><span class="rwhat">OIDC actuation and secret delivery<em>the F1 gate</em></span></li>
+      <li class="alt"><span class="rid">S367</span><span class="rwhat">Bridge and build pipeline<em>spike exit check</em></span></li>
+      <li class="alt"><span class="rid">S368</span><span class="rwhat">tasks<em>first visible win</em></span></li>
+      <li><span class="rid">S343</span><span class="rwhat">GHCR discovery</span></li>
+      <li><span class="rid">S344</span><span class="rwhat">Bundles and capacity</span></li>
+      <li><span class="rid">S345–S351</span><span class="rwhat">Wave 1, one per slice</span></li>
+      <li class="alt"><span class="rid">S369–S372</span><span class="rwhat">projects, records, notes, contacts</span></li>
+      <li><span class="rid">S352</span><span class="rwhat">MariaDB export</span></li>
+      <li><span class="rid">S353–S359</span><span class="rwhat">Wave 2</span></li>
+      <li class="alt"><span class="rid">S373–S378</span><span class="rwhat">remaining clean Everything apps</span></li>
+      <li><span class="rid">S360–S366</span><span class="rwhat">Wave 3</span></li>
+      <li class="alt"><span class="rid">S379–S381</span><span class="rwhat">extras</span></li>
+    </ol>
+  </section>
+
+  <!-- ===================== DOD ===================== -->
+  <section class="rv">
+    <h2 class="sec">Definition of done <b>every app slice</b></h2>
+    <p class="note">The same eleven checks for S345–S351, S353–S366 and S368–S381. A slice that cannot tick one of these is not done; it is a bigger slice.</p>
+    <div class="dod">
+      <div><span class="mk">[x]</span><p>Non-<code>latest</code> tag, both architectures, every writable path declared or marked ephemeral</p></div>
+      <div><span class="mk">[x]</span><p>Requirements declare memory, CPU, storage floors and host ports</p></div>
+      <div><span class="mk">[x]</span><p><code>integrations:</code> present — identity provider or documented exception</p></div>
+      <div><span class="mk">[x]</span><p>Secrets through S266 / S342, never plaintext environment</p></div>
+      <div><span class="mk">[x]</span><p>Backup covers database export and file paths; restore story written down</p></div>
+      <div><span class="mk">[x]</span><p>Exposure defaults to local/overlay; any widening documented</p></div>
+      <div><span class="mk">[x]</span><p>CLI plan and dashboard agree — parity</p></div>
+      <div><span class="mk">[x]</span><p>Tests for manifest validation, plan rendering and install</p></div>
+      <div><span class="mk">[x]</span><p><code>docs/DEFERRED.md</code> records what was found but not done</p></div>
+      <div><span class="mk">[x]</span><p>Slice contract exists in <code>docs/slices/</code> and is linked here</p></div>
+      <div><span class="mk">[x]</span><p>One slice, one commit on main; build stays green</p></div>
+      <div><span class="mk">[x]</span><p>Package named by function in copy, not by upstream marketing text</p></div>
+    </div>
+  </section>
+
+  <!-- ===================== ADR ===================== -->
+  <section class="rv">
+    <h2 class="sec">ADR <b>ledger</b></h2>
+    <p class="note">Four records, each written before its slice's implementation.</p>
+    <div class="adr">
+      <div class="n">ADR-051</div><div class="s">S341</div><div class="d">Catalog integration metadata is advisory, not actuation.</div>
+      <div class="n">ADR-052</div><div class="s">S342</div><div class="d">Secret delivery may export a 0600 file into the app environment at start, under supervision. Amends ADR-021.</div>
+      <div class="n">ADR-035</div><div class="s">S360</div><div class="d">Community image trust: accepted publishers, multi-arch, pinned tags, provenance.</div>
+      <div class="n">ADR-053</div><div class="s">S367</div><div class="d">Everything apps are vendored at a pinned commit with a Homestead bridge; no fork, no vendored SDK.</div>
+    </div>
+  </section>
+
+  <!-- ===================== UNSCHEDULED ===================== -->
+  <section class="rv">
+    <h2 class="sec">Unscheduled <b>· no ID</b></h2>
+    <p class="note">Recorded so nothing is silently lost. None of these blocks a scheduled slice.</p>
+    <div class="dim-block">
+      <h3>Owner-operator apps</h3>
+      <p>Bridge-clean, wrong default suite. Schedule on request, one slice each, after S381: <code>accounting</code> <code>cap-table</code> <code>crm</code> <code>pos</code> <code>AssetDesk</code></p>
+      <h3>Blocked on a capability we are not building</h3>
+      <p><code>calendar</code> <code>email</code> <code>meetings</code> <code>teamchat</code> <code>wiki</code> <code>signatures</code> <code>help-desk</code> <code>field-service</code> <code>fleet</code> <code>legal</code> <code>childcare</code> <code>property-management</code> <code>shifts</code> <code>hiring</code> <code>invoicing</code> <code>contracts</code> <code>whiteboard</code>. <code>survey</code> flips to shippable the day a worker shim exists.</p>
+      <h3>Craft-suite overlap</h3>
+      <p><code>documents</code> <code>spreadsheet</code> <code>presentation</code> <code>pdf</code> <code>vector-studio</code> <code>photo-studio</code> <code>music-studio</code> <code>audio-studio</code> <code>video-studio</code> <code>cad</code> <code>building-design</code></p>
+    </div>
+  </section>
+
+  <!-- ===================== RISK ===================== -->
+  <section class="rv">
+    <h2 class="sec">What could <b>renumber</b> this</h2>
+    <div class="dim-block">
+      <h3>S367 fails its exit check</h3>
+      <p>Track B stops and S368–S381 are released. Nothing in Track A moves.</p>
+      <h3>A package fails its hard gates at slice time</h3>
+      <p>The ID is not reused. The slice is withdrawn, the package is recorded in <code>docs/DEFERRED.md</code>, and the next package moves up.</p>
+      <h3>The Compose generator gains a field</h3>
+      <p>A <code>healthcheck</code> or <code>depends_on</code> field would be its own slice, inserted ahead of S361 if any Wave 3 app needs a readiness gate.</p>
+      <h3>F1 cannot deliver supervised export</h3>
+      <p>Wave 1 reverts to owner-supplied credentials. S342's scope changes; its ID does not.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Homestead · S341–S381</span>
+    <span>Source: docs/SLICE_PLAN.md</span>
+  </div>
+</footer>
+
+<script>
+  const buttons = document.querySelectorAll('.filters button');
+  const rows = [...document.querySelectorAll('tr[data-phase]')];
+  const groups = [...document.querySelectorAll('tr.grp')];
+  function apply(f){
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === f)));
+    rows.forEach(r => r.classList.toggle('hide', f !== 'all' && r.dataset.phase !== f));
+    // hide a group header when none of its rows below are visible
+    groups.forEach(g => {
+      let n = g.nextElementSibling, any = false;
+      while (n && !n.classList.contains('grp')) {
+        if (n.dataset.phase && !n.classList.contains('hide')) { any = true; break; }
+        n = n.nextElementSibling;
+      }
+      g.classList.toggle('hide', f !== 'all' && !any);
+    });
+  }
+  buttons.forEach(b => b.addEventListener('click', () => apply(b.dataset.f)));
+
+  const io = new IntersectionObserver(es => {
+    for (const e of es) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, { rootMargin: '0px 0px -6% 0px', threshold: 0.05 });
+  document.querySelectorAll('.rv').forEach((el, i) => {
+    el.style.transitionDelay = Math.min(i * 40, 180) + 'ms';
+    io.observe(el);
+  });
+</script>
+</body>
+</html>

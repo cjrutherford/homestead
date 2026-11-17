@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"homestead/internal/appaccess"
 	"homestead/internal/appsso"
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
@@ -30,7 +31,8 @@ import (
 // operation, so closing the wizard, the tab or the browser changes
 // nothing. In order: the app's address on the network, its public
 // address by the approved digest, sign-in with Authentik by the approved
-// digest, and the people chosen to grant. Each step is planned again and
+// digest, and the people chosen to grant. New managed public setups run
+// sign-in and grants before publication. Each step is planned again and
 // compared with its approval first; a changed plan or a failure stops the
 // setup there, and the owner resumes it with a fresh approval or skips it.
 
@@ -79,9 +81,10 @@ var setupStepLabels = map[string]string{
 // digest and the people to grant. Its presence alone asks for the
 // address step, which the install digest already approves.
 type setupApproval struct {
-	Public *setupPublicApproval `json:"public,omitempty"`
-	SignIn *setupDigest         `json:"sign_in,omitempty"`
-	People []int64              `json:"people,omitempty"`
+	Public *setupPublicApproval   `json:"public,omitempty"`
+	SignIn *setupDigest           `json:"sign_in,omitempty"`
+	People []int64                `json:"people,omitempty"`
+	Access *installAccessApproval `json:"access,omitempty"`
 	// FilesLink approves the Nextcloud link for craft files the install
 	// review listed (S326, ADR-048 §4), by its digest.
 	FilesLink *setupDigest `json:"files_link,omitempty"`
@@ -122,9 +125,11 @@ type setupRecord struct {
 	Reason string `json:"reason,omitempty"`
 	Actor  string `json:"actor"`
 	// Routes are the local routes the reviewed install plan gives the app.
-	Routes []docker.Route       `json:"routes"`
-	Public *setupPublicApproval `json:"public,omitempty"`
-	People []int64              `json:"people,omitempty"`
+	Routes        []docker.Route       `json:"routes"`
+	Public        *setupPublicApproval `json:"public,omitempty"`
+	People        []int64              `json:"people,omitempty"`
+	AccessChoices []appaccess.Choice   `json:"access_choices,omitempty"`
+	AccessManaged bool                 `json:"access_managed,omitempty"`
 	// FilesApps are the craft apps the nextcloud-link step links (S326).
 	FilesApps []string `json:"files_apps,omitempty"`
 	Digest    string   `json:"install_digest,omitempty"`
@@ -185,7 +190,8 @@ func (s *Server) MountAppSetup(st *store.Store, catalogDir string, local *cert.L
 		linkWait: 5 * time.Minute, linkRetry: 5 * time.Second}
 	s.appSetup = a
 	s.mux.HandleFunc("GET /api/v1/catalog/{name}/setup", a.status)
-	s.mux.HandleFunc("POST /api/v1/catalog/{name}/setup/resume", a.resume)
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/setup/resume", a.resumeHandler(false))
+	s.mux.HandleFunc("POST /api/v1/catalog/{name}/setup/resume-admin", a.resumeHandler(true))
 	s.mux.HandleFunc("POST /api/v1/catalog/{name}/setup/skip", a.skip)
 }
 
@@ -332,6 +338,32 @@ func peopleDigest(app string, ids []int64) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// validatePeople checks the whole selection before starting any grants.
+// Grant still rechecks each person because their state can change later.
+func (a *appSetup) validatePeople(ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	if a.s.people == nil {
+		return errors.New("people are not managed on this appliance")
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			return fmt.Errorf("invalid or duplicate person %d", id)
+		}
+		seen[id] = true
+		active, _, err := a.s.people.AppGrants(id)
+		if errors.Is(err, people.ErrNotFound) || (err == nil && !active) {
+			return fmt.Errorf("person %d is missing or disabled", id)
+		}
+		if err != nil {
+			return fmt.Errorf("check person %d: %w", id, err)
+		}
+	}
+	return nil
+}
+
 // prepare builds the setup record for an install from the owner's
 // approvals and the reviewed install plan. Its steps are the approved
 // ones only. A sign-in approval needs the kept Authentik API token (a
@@ -339,6 +371,15 @@ func peopleDigest(app string, ids []int64) string {
 // with the way to set sign-in up later, and so are the people.
 func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, approval setupApproval, actor string) (setupRecord, error) {
 	rec := setupRecord{App: manifest.Name, Status: setupWaiting, Actor: actor, Routes: []docker.Route{}, Digest: installDigest(plan)}
+	if len(approval.People) > 0 && approval.SignIn == nil {
+		return rec, errors.New("people require an approved sign-in plan")
+	}
+	if approval.Access != nil && len(approval.People) != 0 {
+		return rec, errors.New("choose either access decisions or legacy people")
+	}
+	if approval.Access != nil && approval.SignIn == nil {
+		return rec, errors.New("access decisions require an approved sign-in plan")
+	}
 	for _, r := range plan.Routes {
 		if r.Exposure != docker.ExposurePublic {
 			rec.Routes = append(rec.Routes, r)
@@ -361,7 +402,7 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 		if strings.TrimSpace(si.Digest) == "" {
 			return rec, errors.New("an approved sign-in names its digest")
 		}
-		if manifest.SSO.OIDC == nil {
+		if manifest.SSO.OIDC == nil && manifest.SSO.ForwardAuth == nil {
 			return rec, fmt.Errorf("%s has no sign-in with Authentik", manifest.Title)
 		}
 		step := setupStep{Name: setupSignIn, State: stepWaiting, Digest: si.Digest}
@@ -372,12 +413,29 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 		}
 		rec.Steps = append(rec.Steps, step)
 		if len(approval.People) > 0 {
+			if kept {
+				if err := a.validatePeople(approval.People); err != nil {
+					return rec, err
+				}
+			}
 			rec.People = append([]int64(nil), approval.People...)
 			ps := setupStep{Name: setupPeople, State: stepWaiting, Digest: peopleDigest(manifest.Name, rec.People)}
 			if !kept {
 				ps.State, ps.Reason = stepSkipped, "Sign-in was not set up, so no one was granted the app. Grant people on the People page once sign-in is on."
 			}
 			rec.Steps = append(rec.Steps, ps)
+		}
+		if approval.Access != nil {
+			if !kept {
+				return rec, errors.New("access decisions require a retained Authentik API token")
+			}
+			rec.AccessChoices = append([]appaccess.Choice{}, approval.Access.Choices...)
+			rec.AccessManaged = true
+			p, err := a.verifiedAccessGrantPlan(context.Background(), rec.App, rec.AccessChoices)
+			if err != nil {
+				return rec, err
+			}
+			rec.Steps = append(rec.Steps, setupStep{Name: setupPeople, State: stepWaiting, Digest: p.Digest})
 		}
 	}
 	if fl := approval.FilesLink; fl != nil {
@@ -392,6 +450,23 @@ func (a *appSetup) prepare(manifest catalog.Manifest, plan catalog.InstallPlan, 
 		} else {
 			// A craft app is linked once it has its address.
 			rec.Steps = append(rec.Steps[:1], append([]setupStep{step}, rec.Steps[1:]...)...)
+		}
+	}
+	if rec.AccessManaged && rec.Public != nil {
+		// Keep the original public approval and digest; only move its step.
+		// Persisted legacy records retain their own step order.
+		for i, step := range rec.Steps {
+			if step.Name == setupPublish {
+				rec.Steps = append(rec.Steps[:i], rec.Steps[i+1:]...)
+				if rec.App == nextcloudPackage && len(rec.Steps) > 0 && rec.Steps[len(rec.Steps)-1].Name == setupFilesLink {
+					// Nextcloud links craft apps only after its own setup.
+					last := len(rec.Steps) - 1
+					rec.Steps = append(rec.Steps[:last], step, rec.Steps[last])
+				} else {
+					rec.Steps = append(rec.Steps, step)
+				}
+				break
+			}
 		}
 	}
 	return rec, nil
@@ -542,7 +617,12 @@ func (a *appSetup) runStep(ctx context.Context, app, name, token string) error {
 	if a.startFn != nil {
 		start = a.startFn
 	}
-	id, err := start(ctx, rec, name, approved, token)
+	var id int64
+	if name == setupPublish && rec.AccessManaged && (rec.step(setupSignIn) == nil || rec.step(setupSignIn).State != stepDone || rec.step(setupPeople) == nil || rec.step(setupPeople).State != stepDone) {
+		err = errors.New("managed app sign-in and person grants must finish before publication")
+	} else {
+		id, err = start(ctx, rec, name, approved, token)
+	}
 	if err == nil && id != 0 {
 		a.update(app, func(r *setupRecord) {
 			if s := r.step(name); s != nil {
@@ -615,7 +695,7 @@ func (a *appSetup) startStep(ctx context.Context, rec setupRecord, name, approve
 		if len(review.add) == 0 {
 			return 0, nil
 		}
-		id, _, err := startEdgeReconcile(ctx, a.runner, a.st, a.local, review.add, rec.Actor)
+		id, _, err := startEdgeReconcile(ctx, a.runner, a.st, a.local, a.catalogDir, review.add, rec.Actor)
 		return id, err
 	case setupPublish:
 		if a.s.appPublic == nil || rec.Public == nil {
@@ -628,13 +708,42 @@ func (a *appSetup) startStep(ctx context.Context, rec setupRecord, name, approve
 		if a.s.appSignIn == nil {
 			return 0, errors.New("sign-in with Authentik is not available on this appliance")
 		}
+		if rec.AccessManaged && rec.Public != nil {
+			return a.s.appSignIn.startSetup(ctx, rec, approved, token, rec.Actor)
+		}
 		return a.s.appSignIn.start(ctx, rec.App, true, approved, token, rec.Actor)
 	case setupPeople:
+		if rec.AccessManaged {
+			p, err := a.verifiedAccessGrantPlan(ctx, rec.App, rec.AccessChoices)
+			if err != nil {
+				return 0, err
+			}
+			if p.Digest != approved {
+				return 0, errPlanChanged
+			}
+			if a.s.people == nil {
+				return 0, errors.New("people are not managed on this appliance")
+			}
+			completed := 0
+			for _, choice := range rec.AccessChoices {
+				if choice.Role == appaccess.None {
+					continue
+				}
+				if _, err := a.s.people.Grant(ctx, rec.Actor, choice.PersonID, people.Grant{App: rec.App, Role: string(choice.Role)}); err != nil {
+					return 0, fmt.Errorf("granting %s did not finish after %d completed grants; that person's Authentik groups may be partially changed. Review the app's access and People before resuming: %w", personName(a.st, choice.PersonID), completed, err)
+				}
+				completed++
+			}
+			return 0, nil
+		}
 		if peopleDigest(rec.App, rec.People) != approved {
 			return 0, errPlanChanged
 		}
 		if a.s.people == nil {
 			return 0, errors.New("people are not managed on this appliance")
+		}
+		if err := a.validatePeople(rec.People); err != nil {
+			return 0, err
 		}
 		for _, id := range rec.People {
 			if _, err := a.s.people.Grant(ctx, rec.Actor, id, people.Grant{App: rec.App, Role: people.RoleUser}); err != nil {
@@ -763,7 +872,13 @@ func (a *appSetup) review(ctx context.Context, rec setupRecord, name string) ste
 			out.Problem = "Sign-in with Authentik is not available on this appliance."
 			return out
 		}
-		in, err := a.s.appSignIn.inputs(rec.App)
+		var in appsso.Inputs
+		var err error
+		if rec.AccessManaged && rec.Public != nil {
+			in, err = a.s.appSignIn.setupInputs(rec)
+		} else {
+			in, err = a.s.appSignIn.inputs(rec.App)
+		}
 		if err != nil {
 			out.Problem = err.Error()
 			return out
@@ -776,6 +891,18 @@ func (a *appSetup) review(ctx context.Context, rec setupRecord, name string) ste
 		kept := a.s.appSignIn.tokenKept()
 		out.Digest, out.SignIn, out.TokenKept = plan.Digest, &plan, &kept
 	case setupPeople:
+		if rec.AccessManaged {
+			p, err := a.verifiedAccessGrantPlan(ctx, rec.App, rec.AccessChoices)
+			if err != nil {
+				out.Problem = err.Error()
+				return out
+			}
+			out.Digest = p.Digest
+			for _, choice := range rec.AccessChoices {
+				out.People = append(out.People, personName(a.st, choice.PersonID)+": "+string(choice.Role))
+			}
+			return out
+		}
 		out.Digest = peopleDigest(rec.App, rec.People)
 		for _, id := range rec.People {
 			out.People = append(out.People, personName(a.st, id))
@@ -804,6 +931,9 @@ type setupView struct {
 	Operation int64       `json:"operation,omitempty"`
 	Steps     []setupStep `json:"steps"`
 	Reason    string      `json:"reason,omitempty"`
+	// AdminGrants: resuming applies app-administrator grants, so it needs
+	// fresh authentication (/setup/resume-admin).
+	AdminGrants bool `json:"admin_grants,omitempty"`
 	// Review is the stopped step's plan as it stands now: approving its
 	// digest resumes the setup.
 	Review *stepReview `json:"review,omitempty"`
@@ -821,7 +951,7 @@ func (a *appSetup) view(ctx context.Context, name string) (setupView, error) {
 	if !ok {
 		return setupView{App: name, Status: setupNone, Steps: []setupStep{}}, nil
 	}
-	out := setupView{App: name, Status: rec.Status, Install: rec.Install, Operation: rec.Operation, Steps: rec.Steps, Reason: rec.Reason}
+	out := setupView{App: name, Status: rec.Status, Install: rec.Install, Operation: rec.Operation, Steps: rec.Steps, Reason: rec.Reason, AdminGrants: rec.needsAdminGrants()}
 	if out.Steps == nil {
 		out.Steps = []setupStep{}
 	}
@@ -856,7 +986,26 @@ type setupResumeBody struct {
 	Token  string `json:"token,omitempty"`
 }
 
-func (a *appSetup) resume(w http.ResponseWriter, r *http.Request) {
+// needsAdminGrants reports a managed setup whose people step has not
+// finished and would apply an app-administrator choice. Resuming it is an
+// administrator grant, so it needs the same fresh step-up as /install-admin.
+func (r setupRecord) needsAdminGrants() bool {
+	if !r.AccessManaged {
+		return false
+	}
+	if p := r.step(setupPeople); p != nil && p.State == stepDone {
+		return false
+	}
+	return validateInstallAdmin(r.AccessChoices, false) != nil
+}
+
+// resumeHandler serves /setup/resume (adminAuthorized false) and
+// /setup/resume-admin (a step-up route, true).
+func (a *appSetup) resumeHandler(adminAuthorized bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { a.resume(w, r, adminAuthorized) }
+}
+
+func (a *appSetup) resume(w http.ResponseWriter, r *http.Request, adminAuthorized bool) {
 	name := r.PathValue("name")
 	if _, ok := a.known(w, name); !ok {
 		return
@@ -880,6 +1029,10 @@ func (a *appSetup) resume(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "there is no stopped setup to resume for this app", http.StatusConflict)
 		return
 	}
+	if !adminAuthorized && rec.needsAdminGrants() {
+		http.Error(w, "this setup would grant app administrator access; resume it with fresh authentication (resume-admin)", http.StatusForbidden)
+		return
+	}
 	stopped := rec.stopped()
 	review := a.review(r.Context(), rec, stopped.Name)
 	if review.Problem != "" {
@@ -895,6 +1048,10 @@ func (a *appSetup) resume(w http.ResponseWriter, r *http.Request) {
 	rec, ok, err = a.load(name)
 	if err != nil || !ok || rec.Status != setupStopped || rec.stopped() == nil || rec.stopped().Name != stopped.Name {
 		http.Error(w, "the setup changed meanwhile; read it again", http.StatusConflict)
+		return
+	}
+	if !adminAuthorized && rec.needsAdminGrants() {
+		http.Error(w, "this setup would grant app administrator access; resume it with fresh authentication (resume-admin)", http.StatusForbidden)
 		return
 	}
 	s := rec.stopped()

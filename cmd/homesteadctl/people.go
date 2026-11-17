@@ -133,6 +133,9 @@ func runPeopleList(ctx context.Context, client *apiclient.Client, stdout, stderr
 	if len(view.People) == 0 {
 		fmt.Fprintln(stdout, "no other people yet")
 	}
+	for _, p := range view.Purges {
+		fmt.Fprintf(stdout, "purge pending: %s in %s (%d tries); the appliance retries it when the app runs\n", p.Username, p.App, p.Attempts)
+	}
 	if view.ReadError != "" {
 		fmt.Fprintf(stdout, "could not read Authentik: %s\n", view.ReadError)
 	}
@@ -228,11 +231,15 @@ func printRevealed(stdout, stderr io.Writer, rev *apiclient.Revealed) {
 	}
 	switch rev.Kind {
 	case "link":
-		fmt.Fprintln(stderr, "One-time sign-in link (shown once, not stored):")
+		fmt.Fprintln(stderr, "One-time sign-in link, for the local network (shown once, not stored):")
 	default:
 		fmt.Fprintln(stderr, "Generated password (shown once, not stored):")
 	}
 	fmt.Fprintln(stdout, rev.Value)
+	if rev.PublicValue != "" {
+		fmt.Fprintln(stderr, "The same link over the internet (it works once, from either address):")
+		fmt.Fprintln(stdout, rev.PublicValue)
+	}
 }
 
 func runPeopleAdd(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
@@ -372,21 +379,25 @@ func runPeopleSimple(ctx context.Context, client *apiclient.Client, args []strin
 		if err != nil {
 			return peopleFail(stderr, err)
 		}
-		fmt.Fprintf(stdout, "Second factor reset for %s: %d removed", p.Username, len(res.Removed))
-		if len(res.Skipped) > 0 {
-			fmt.Fprintf(stdout, ", %d left (%s)", len(res.Skipped), strings.Join(res.Skipped, ", "))
+		fmt.Fprintf(stdout, "Second factor reset for %s: %d removed", p.Username, res.Removed)
+		if res.Skipped > 0 {
+			fmt.Fprintf(stdout, ", %d left", res.Skipped)
 		}
 		fmt.Fprintln(stdout)
 	case "disable", "enable":
-		if err := client.SetPersonActive(ctx, p.ID, verb == "enable"); err != nil {
+		warnings, err := client.SetPersonActive(ctx, p.ID, verb == "enable")
+		if err != nil {
 			return peopleFail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "%s: %sd\n", p.Username, verb)
+		printPeopleWarnings(stderr, warnings)
 	case "remove":
-		if err := client.RemovePerson(ctx, p.ID); err != nil {
+		warnings, err := client.RemovePerson(ctx, p.ID)
+		if err != nil {
 			return peopleFail(stderr, err)
 		}
 		fmt.Fprintf(stdout, "Removed %s. App data stays in the apps.\n", p.Username)
+		printPeopleWarnings(stderr, warnings)
 	}
 	return exitOK
 }
@@ -430,10 +441,11 @@ func runPeopleGrant(ctx context.Context, client *apiclient.Client, args []string
 	if err != nil {
 		return peopleFail(stderr, err)
 	}
+	var res apiclient.PersonResult
 	if revoke {
-		_, err = client.RevokePersonApp(ctx, p.ID, pos[1])
+		res, err = client.RevokePersonApp(ctx, p.ID, pos[1])
 	} else {
-		_, err = client.GrantPersonApp(ctx, p.ID, pos[1], *admin)
+		res, err = client.GrantPersonApp(ctx, p.ID, pos[1], *admin)
 	}
 	if err != nil {
 		return peopleFail(stderr, err)
@@ -446,7 +458,16 @@ func runPeopleGrant(ctx context.Context, client *apiclient.Client, args []string
 	default:
 		fmt.Fprintf(stdout, "%s can open %s\n", p.Username, pos[1])
 	}
+	printPeopleWarnings(stderr, res.Warnings)
 	return exitOK
+}
+
+// printPeopleWarnings writes each warning the daemon returned with a change
+// (S508); the exit code stays as it was.
+func printPeopleWarnings(stderr io.Writer, warnings []string) {
+	for _, w := range warnings {
+		fmt.Fprintf(stderr, "warning: %s\n", w)
+	}
 }
 
 func runPeopleResolve(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {

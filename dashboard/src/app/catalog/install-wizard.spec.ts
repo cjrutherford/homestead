@@ -125,6 +125,7 @@ function plan(name: string, extra: Record<string, unknown> = {}) {
     Notes: ['install creates the homestead-edge network if it is missing'],
     Actions: ['provision', 'up'],
     EdgeNetwork: true,
+    access: { mode: 'open', people: [], admin_supported: false },
     ...extra,
   };
 }
@@ -182,6 +183,8 @@ describe('InstallWizard', () => {
       publicStatus?: Record<string, unknown>;
       /** S315: the edge route table a path app reads its appliance names from. */
       edgeRoutes?: unknown[];
+      /** Leave S390 access planning on HTTP for request/response assertions. */
+      accessApi?: boolean;
     } = {},
   ) {
     const name = manifest['Name'] as string;
@@ -199,6 +202,9 @@ describe('InstallWizard', () => {
       streams.set(id, subject);
       return subject;
     });
+    if (!options.accessApi) {
+      vi.spyOn(TestBed.inject(ApiService), 'planCatalogAccess').mockReturnValue(of({ digest: 'access-digest' }));
+    }
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(InstallWizard);
     for (const [key, value] of Object.entries(options.inputs ?? {})) {
@@ -443,6 +449,11 @@ describe('InstallWizard', () => {
       expect(options.filter((o) => o.startsWith('/mnt/big'))).toHaveLength(1);
     });
 
+    it('uses the exposed service container port without requiring a host port', () => {
+      start({ ...NEXTCLOUD_NO_PORTS, Services: NEXTCLOUD.Services.map((service) => ({ ...service, ContainerPort: 8088 })) });
+      expect(c().containerPorts()['nextcloud']).toBe('8088');
+    });
+
     it('defaults the container port to 80 for Nextcloud, which declares no host port', () => {
       start(NEXTCLOUD_NO_PORTS);
       expect(c().containerPorts()['nextcloud']).toBe('80');
@@ -582,7 +593,7 @@ describe('InstallWizard', () => {
       expect(text()).toContain('OIDC, SAML');
       // S305: the review can connect sign-in during the install (S298).
       expect(text()).toContain('the review offers Sign in with Authentik as part of the install');
-      expect(text()).toContain('you, and people you grant on the People page');
+      expect(text()).toContain('The owner always keeps full access.');
       expect(text()).not.toContain('Installing does not change that');
       expect(text()).not.toContain('Passwords Homestead creates');
     });
@@ -684,49 +695,126 @@ describe('InstallWizard', () => {
       expect(c().reach()).toBe('checking');
     });
 
-    it('offers sign-in with Authentik in the review and applies the reviewed plan once the address lands (S298)', () => {
-      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+    it('requires explicit choices, pins disabled people to none, and uses the admin install route', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
       to('review');
-      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(
-        plan('gridcraft', {
-          sign_in: {
-            offered: true,
-            token_kept: false,
-            plan: {
-              package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'immich', provider: 'Homestead: GridCraft',
-              application: 'GridCraft (homestead-gridcraft)', client_id: 'homestead-gridcraft', issuer: 'https://authentik.lan/application/o/homestead-gridcraft/',
-              redirect_uris: ['https://gridcraft.lan/auth/login'], app_settings: ['Turn on OAuth sign-in'], changes: [], warnings: [], digest: 'sd1',
-            },
-          },
-        }),
-      );
-      fixture.detectChanges();
-      http.expectOne('/api/v1/people').flush({
-        token_kept: true, owner: 'owner', apps: ['gridcraft'], unmanaged: [], token_words: '',
-        people: [{ id: 4, display_name: 'Sam Lee', username: 'sam', email: '', state: 'active', origin: 'created', grants: [], status: 'ok', drift: null }],
-      });
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'managed', admin_supported: true, people: [
+          { id: 4, display_name: 'Sam Lee', username: 'sam', state: 'active' },
+          { id: 6, display_name: 'Alex Chen', username: 'alex', state: 'active' },
+          { id: 5, display_name: 'Pat Kim', username: 'pat', state: 'disabled' },
+        ],
+      }, sign_in: { offered: true, token_kept: true, plan: {
+        package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'craft', provider: 'Homestead: GridCraft',
+        application: 'GridCraft', client_id: 'gridcraft', issuer: 'https://authentik.lan', redirect_uris: [],
+        app_settings: [], changes: [], warnings: [], digest: 'si1',
+      } } }));
       fixture.detectChanges();
       const el = fixture.nativeElement as HTMLElement;
-      expect(text()).toContain('Sign in with Authentik');
-      expect(text()).toContain('Who can sign in: you, and the people you choose here');
+      expect(text()).toContain('Choose a role for every managed person');
       expect(text()).toContain('Sam Lee (sam)');
-      const sam = el.querySelector('input[name="grant-4"]') as HTMLInputElement;
-      sam.checked = true;
+      const signIn = el.querySelector('input[name="sign-in-wanted"]') as HTMLInputElement;
+      expect(signIn.checked).toBe(true);
+      expect(signIn.disabled).toBe(true);
+      expect(button('Install GridCraft')!.disabled).toBe(true);
+      const sam = el.querySelector('select[name="access-4"]') as HTMLSelectElement;
+      sam.value = 'admin';
       sam.dispatchEvent(new Event('change'));
-      expect((el.querySelector('input[name="sign-in-wanted"]') as HTMLInputElement).checked).toBe(true);
-      expect(text()).toContain('Homestead: GridCraft');
-      expect(text()).toContain('https://gridcraft.lan/auth/login');
-      expect(text()).toContain('Turn on OAuth sign-in');
-      // S324: the appliance runs sign-in with the install, so the page asks for no token.
-      expect(el.querySelector('input[name="sign-in-token"]')).toBeNull();
-      expect(text()).toContain('Homestead keeps no Authentik API token');
+      fixture.detectChanges();
+      expect(button('Install GridCraft')!.disabled).toBe(true);
+      const alex = el.querySelector('select[name="access-6"]') as HTMLSelectElement;
+      alex.value = 'none';
+      alex.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      const disabled = el.querySelector('select[name="access-5"]') as HTMLSelectElement;
+      expect(disabled.disabled).toBe(true);
+      expect(disabled.value).toBe('none');
+      expect(button('Install GridCraft')!.disabled).toBe(false);
       button('Install GridCraft')!.click();
-      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
-      expect(install.request.body.setup).toEqual({ sign_in: { digest: 'sd1' }, people: [4] });
+      const access = http.expectOne('/api/v1/catalog/gridcraft/access-plan');
+      expect(access.request.body.choices).toEqual([
+        { person_id: 4, role: 'admin' }, { person_id: 6, role: 'none' }, { person_id: 5, role: 'none' },
+      ]);
+      expect(access.request.body.domain).toBe('lan');
+      access.flush({ digest: 'access-review' });
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install-admin');
+      expect(install.request.body.setup.access).toEqual({ digest: 'access-review', choices: [
+        { person_id: 4, role: 'admin' }, { person_id: 6, role: 'none' }, { person_id: 5, role: 'none' },
+      ] });
+      expect(install.request.body.setup.sign_in).toEqual({ digest: 'si1' });
       install.flush({ id: 7 });
       fixture.detectChanges();
-      http.expectNone('/api/v1/catalog/gridcraft/sign-in/apply');
-      http.expectNone('/api/v1/people/4/apps/gridcraft');
+    });
+
+    it.each(['open', 'bootstrap', 'self-managed'] as const)('installs %s apps without requesting access decisions', (mode) => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', {
+        access: { mode, people: [], admin_supported: false },
+      }));
+      fixture.detectChanges();
+
+      button('Install GridCraft')!.click();
+      http.expectNone('/api/v1/catalog/gridcraft/access-plan');
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup).not.toHaveProperty('access');
+      install.flush({ id: 8 });
+    });
+
+    it('shows the self-managed notice and renders no per-person selectors', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'self-managed', people: [], admin_supported: false,
+        notice: 'GridCraft keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself.',
+      } }));
+      fixture.detectChanges();
+      expect(text()).toContain('keeps its own accounts');
+      expect((fixture.nativeElement as HTMLElement).querySelector('select[name^="access-"]')).toBeNull();
+      expect(button('Install GridCraft')!.disabled).toBe(false);
+    });
+
+    it('blocks installation when the app access integration is unavailable', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] } });
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'unavailable', admin_supported: false, people: [], reason: 'No enforceable access integration is ready.',
+      } }));
+      fixture.detectChanges();
+      expect(text()).toContain('Access cannot be enforced for this app.');
+      expect(button('Install GridCraft')!.disabled).toBe(true);
+    });
+
+    it('clears prior choices when the daemon returns a changed person roster', () => {
+      start(CRAFT, { craft: { images: [{ app: 'gridcraft', version: '0.7.0', present: true, match: true }], verdicts: [] }, accessApi: true });
+      const signIn = { offered: true, token_kept: true, plan: {
+        package: 'gridcraft', title: 'GridCraft', enabled: true, adapter: 'craft', provider: 'Homestead: GridCraft',
+        application: 'GridCraft', client_id: 'gridcraft', issuer: 'https://authentik.lan', redirect_uris: [],
+        app_settings: [], changes: [], warnings: [], digest: 'si1',
+      } };
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'managed', admin_supported: false, people: [
+          { id: 4, display_name: 'Sam Lee', username: 'sam', state: 'active' },
+        ],
+      }, sign_in: signIn }));
+      fixture.detectChanges();
+      const sam = (fixture.nativeElement as HTMLElement).querySelector('select[name="access-4"]') as HTMLSelectElement;
+      sam.value = 'user';
+      sam.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(button('Install GridCraft')!.disabled).toBe(false);
+
+      c().replan().subscribe();
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', { access: {
+        mode: 'managed', admin_supported: false, people: [
+          { id: 4, display_name: 'Sam Lee', username: 'sam', state: 'active' },
+          { id: 7, display_name: 'Rae Park', username: 'rae', state: 'active' },
+        ],
+      }, sign_in: signIn }));
+      fixture.detectChanges();
+      expect(((fixture.nativeElement as HTMLElement).querySelector('select[name="access-4"]') as HTMLSelectElement).value).toBe('');
+      expect(button('Install GridCraft')!.disabled).toBe(true);
     });
 
     it('lists the Nextcloud link in the review and approves it with the install (S326)', () => {
@@ -1006,6 +1094,15 @@ describe('InstallWizard', () => {
       expect(c().publish()).toBe(false);
     });
 
+    it('offers no publish toggle for a never-publish app even with a tunnel (S451)', () => {
+      start({ ...CRAFT, Publish: 'never' }, { publicStatus: TUNNEL });
+      to('address');
+      expect(el().querySelector('[data-never-publish]')?.textContent).toContain('never published');
+      expect(el().querySelector('input[name="publish"]')).toBeNull();
+      expect(el().querySelector('input[name="public-name"]')).toBeNull();
+      expect(c().publish()).toBe(false);
+    });
+
     it('starts publishing off, with the warning, when the install sets up no sign-in', () => {
       start(CRAFT, { publicStatus: TUNNEL });
       to('address');
@@ -1037,6 +1134,40 @@ describe('InstallWizard', () => {
       expect(el().querySelector('[data-reach-public]')?.textContent).toContain('Local network and the tunnel');
     });
 
+    it('reviews managed publication for the state after sign-in and access setup', () => {
+      start(CRAFT, { publicStatus: TUNNEL, craft: BUILT, accessApi: true });
+      to('preflight');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', {
+        access: { mode: 'managed', people: [], admin_supported: false },
+        sign_in: SIGN_IN,
+      }));
+      to('address');
+      fixture.detectChanges();
+      expect(text()).toContain('Publication waits until Authentik sign-in and person access setup finish');
+      expect(el().querySelector('input[name="publish"]')).not.toBeNull();
+      const firstPublic = http.expectOne('/api/v1/catalog/gridcraft/public/plan');
+      expect(firstPublic.request.body.anticipate_sign_in).toBe(true);
+      firstPublic.flush(publicPlan('original-public'));
+
+      to('review');
+      http.expectOne('/api/v1/catalog/gridcraft/plan').flush(plan('gridcraft', {
+        access: { mode: 'managed', people: [], admin_supported: false },
+        sign_in: SIGN_IN,
+      }));
+      const secondPublic = http.expectOne('/api/v1/catalog/gridcraft/public/plan');
+      expect(secondPublic.request.body.anticipate_sign_in).toBe(true);
+      secondPublic.flush(publicPlan('original-public'));
+      fixture.detectChanges();
+      button('Approve both and install GridCraft')!.click();
+      const access = http.expectOne('/api/v1/catalog/gridcraft/access-plan');
+      expect(access.request.body.public_name).toBe('gridcraft.homestead.example.com');
+      access.flush({ digest: 'access-reviewed' });
+      const install = http.expectOne('/api/v1/catalog/gridcraft/install');
+      expect(install.request.body.setup.public.digest).toBe('original-public');
+      expect(install.request.body.setup.access).toEqual({ digest: 'access-reviewed', choices: [] });
+      install.flush({ id: 44 });
+    });
+
     function reviewBoth(digest = 'pd1') {
       start(CRAFT, { publicStatus: TUNNEL, craft: BUILT });
       to('preflight');
@@ -1062,6 +1193,8 @@ describe('InstallWizard', () => {
       const install = http.expectOne('/api/v1/catalog/gridcraft/install');
       expect(install.request.body.digest).toBe('id1');
       expect(install.request.body.public_name).toBe('gridcraft.homestead.example.com');
+      expect(install.request.body.setup.public).toEqual({ hostname: 'gridcraft.homestead.example.com', route: 'gridcraft.lan', digest: 'pd1' });
+      expect(install.request.body.setup).not.toHaveProperty('access');
       install.flush({ id: 7 });
       fixture.detectChanges();
       // Both permits carry their Approved stamp while it installs.

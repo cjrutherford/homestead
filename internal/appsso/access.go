@@ -23,6 +23,9 @@ type RoleMapping struct {
 	// AdminAlias, when set, is added to the groups claim for members of the
 	// admin group (Nextcloud reads the group "admin").
 	AdminAlias string
+	// UserAlias (S417), when set, is added to the groups claim for
+	// everyone outside the admin group (Audiobookshelf reads "user").
+	UserAlias string
 	// Claims are extra claims, each a Python expression over `admin` (true
 	// for members of the admin group).
 	Claims map[string]string
@@ -42,14 +45,24 @@ func pyStr(s string) string {
 }
 
 // claimExpression is the scope mapping's Python: a groups claim with only
-// homestead- groups, plus what the adapter adds for the admin role.
+// the app's own groups (users, admins, owner), plus what the adapter adds
+// for the admin role.
 func claimExpression(g GroupNames, rm RoleMapping) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "names = sorted(group.name for group in request.user.ak_groups.all() if group.name.startswith(%s))\n", pyStr(sso.GroupPrefix))
+	fmt.Fprintf(&b, "names = sorted(group.name for group in request.user.ak_groups.all() if group.name in (%s, %s, %s))\n", pyStr(g.Users), pyStr(g.Admins), pyStr(g.Owner))
 	fmt.Fprintf(&b, "admin = %s in names\n", pyStr(g.Admins))
-	b.WriteString("claims = {\"groups\": list(names)}\n")
+	// The standard profile mapping is not bound for any app (the order
+	// Authentik evaluates mappings in is not ours to rely on), so this
+	// mapping carries the profile claims itself, minus the built-in list of
+	// every group the person holds (S496, S499).
+	b.WriteString("avatar = request.user.avatar\n")
+	b.WriteString("claims = delete_none_values({\"name\": request.user.name, \"given_name\": ak_obj_attr(request.user, \"given_name\", \"name\"), \"family_name\": ak_obj_attr(request.user, \"family_name\"), \"preferred_username\": request.user.username, \"nickname\": request.user.username, \"picture\": avatar if avatar and not avatar.startswith(\"data:\") else None})\n")
+	b.WriteString("claims[\"groups\"] = list(names)\n")
 	if rm.AdminAlias != "" {
 		fmt.Fprintf(&b, "if admin:\n    claims[\"groups\"].append(%s)\n", pyStr(rm.AdminAlias))
+	}
+	if rm.UserAlias != "" {
+		fmt.Fprintf(&b, "if not admin:\n    claims[\"groups\"].append(%s)\n", pyStr(rm.UserAlias))
 	}
 	keys := make([]string, 0, len(rm.Claims))
 	for k := range rm.Claims {
@@ -72,6 +85,10 @@ func buildAccess(pkg, title string, ownerSub string, rm RoleMapping) sso.Access 
 	return sso.Access{
 		Groups: all, OwnerSub: ownerSub, OwnerOf: append([]string(nil), all...), Bindings: append([]string(nil), all...),
 		ClaimMapping: ClaimMappingName(title), ClaimExpression: claimExpression(g, rm),
+		// S499: every app's claim lists only its own groups. It answers to
+		// profile, which every app asks for, and carries the groups claim
+		// for the apps that also ask for the groups scope.
+		ClaimScope: "profile",
 	}
 }
 

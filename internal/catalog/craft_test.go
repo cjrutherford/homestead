@@ -574,9 +574,10 @@ func TestCraftPackages(t *testing.T) {
 			if !m.Stateless() || len(m.BackupPaths) != 0 || m.Database != nil {
 				t.Fatal("craft package is not stateless")
 			}
-			// Local-only exposure that cannot be widened by the package.
+			// Local recommended; widening is allowed only as a public path
+			// behind the shared Authentik gate (ADR-062, S481).
 			endpoint, ok := m.Exposure.Find("web")
-			if !ok || string(endpoint.Recommended) != "local" || endpoint.AllowWider || len(endpoint.Warnings) == 0 {
+			if !ok || string(endpoint.Recommended) != "local" || !endpoint.AllowWider || m.Publish != PublishPath || m.SSO.ForwardAuth == nil || len(endpoint.Warnings) == 0 {
 				t.Fatalf("endpoint = %+v", endpoint)
 			}
 			// The package does not describe itself as clean-room.

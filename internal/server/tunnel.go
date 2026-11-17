@@ -487,6 +487,16 @@ func authentikRoute(routes []docker.Route) int {
 	return -1
 }
 
+// authentikPathPublished reports whether Authentik, served at a path of
+// the dashboard's name (ADR-044), is published with the dashboard: the
+// dashboard route and a path Authentik exist and sign-in is linked, since
+// the dashboard is published only behind Authentik (ADR-037 §4). A fresh
+// tunnel plan and a move of Authentik both ask this.
+func authentikPathPublished(routes []docker.Route, signInLinked bool) bool {
+	ak := authentikRoute(routes)
+	return signInLinked && dashboardRoute(routes) >= 0 && ak >= 0 && routes[ak].IsPath()
+}
+
 func dashboardRoute(routes []docker.Route) int {
 	for i, r := range routes {
 		if r.Dashboard {
@@ -585,6 +595,7 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 		}
 	}
 	dash, ak := dashboardRoute(set.Routes), authentikRoute(set.Routes)
+	pathAuth := authentikPathPublished(set.Routes, facts.SignInLinked)
 	plan := tunnelPlan{
 		Name: req.Name, DashboardHostname: dashName, AuthHostname: authName,
 		Ingress: []tunnelPlanRoute{}, DNS: []tunnelPlanChange{}, Omitted: []tunnelOmission{}, Warnings: []string{},
@@ -615,7 +626,7 @@ func buildTunnelPlan(ctx context.Context, st *store.Store, secrets *secret.Store
 	default:
 		plan.Ingress = append([]tunnelPlanRoute{{Hostname: dashName, Role: tunnelRoleDashboard,
 			Route: string(set.Routes[dash].Host), Service: tunnelEntryService}}, plan.Ingress...)
-		if !legacyAuth {
+		if pathAuth {
 			r := set.Routes[ak]
 			plan.Paths = append(plan.Paths, tunnelPlanPath{Role: tunnelRoleAuth, Route: string(r.Host), Path: r.Path,
 				URL: docker.PathURL(docker.Hostname(dashName), r.Path)})
@@ -844,6 +855,8 @@ var applyTunnelNames = func(ctx context.Context, st *store.Store, names map[dock
 // reconcileEdgeSet deploys the edge stack and reconciles it to set,
 // saving set as the route table. A var so tests skip Docker.
 var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.RouteSet) error {
+	docker.HealGates(set.Routes)
+	stampSingleOrigin(singleOriginCatalogDir(), set.Routes)
 	deploy, err := docker.DeployDefinition(docker.CaddyStack())
 	if err != nil {
 		return err
@@ -862,6 +875,9 @@ var reconcileEdgeSet = func(ctx context.Context, st *store.Store, set docker.Rou
 			}
 		}
 	}
+	// The edge network may have been recreated with a new subnet (S421).
+	// Best effort here; the periodic pass and the Doctor report a miss.
+	_ = reconcileGateBlock(ctx, st)
 	return nil
 }
 

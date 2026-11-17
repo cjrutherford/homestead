@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"homestead/internal/purge"
 )
 
 var bg = context.Background()
@@ -404,5 +406,149 @@ func TestEveryActionIsAuditedWithoutSecrets(t *testing.T) {
 		if secret != "" && strings.Contains(all, secret) {
 			t.Fatalf("audit holds %q", secret)
 		}
+	}
+}
+
+func TestLinkComesBackOnTheLocalAndThePublicAddress(t *testing.T) {
+	r := newRig(t)
+	r.svc.PublicAuthentik = func() string { return "https://home.example.com/apps/auth" }
+	_, rev := r.add("ada")
+	if rev == nil || rev.Kind != "link" || !strings.HasPrefix(rev.Value, "https://auth.example/recover/tok-") {
+		t.Fatalf("local link: %+v", rev)
+	}
+	if want := "https://home.example.com/recover/" + strings.TrimPrefix(rev.Value, "https://auth.example/recover/"); rev.PublicValue != want {
+		t.Fatalf("public link %q, want %q", rev.PublicValue, want)
+	}
+	// A reset issues both again.
+	p, _ := r.svc.List(bg)
+	again, err := r.svc.ResetPassword(bg, "owner", p.People[0].ID, MethodLink, "")
+	if err != nil || again.PublicValue == "" || !strings.HasPrefix(again.Value, "https://auth.example/") {
+		t.Fatalf("reset: %v %+v", err, again)
+	}
+	for _, l := range r.logs {
+		if strings.Contains(l, rev.PublicValue) || strings.Contains(l, again.PublicValue) {
+			t.Fatalf("audit holds a link: %q", l)
+		}
+	}
+}
+
+func TestNoPublicLinkWithoutAPublicAuthentikAddress(t *testing.T) {
+	r := newRig(t)
+	_, rev := r.add("ada")
+	if rev == nil || rev.PublicValue != "" {
+		t.Fatalf("no tunnel: %+v", rev)
+	}
+	r.svc.PublicAuthentik = func() string { return "" }
+	p, _ := r.svc.List(bg)
+	again, err := r.svc.ResetPassword(bg, "owner", p.People[0].ID, MethodLink, "")
+	if err != nil || again.PublicValue != "" {
+		t.Fatalf("empty public address: %v %+v", err, again)
+	}
+}
+
+// purgeRig wires a purge service whose Everything apps are tasks and notes.
+func purgeRig(t *testing.T) (*rig, *[]string, map[string]bool) {
+	r := newRig(t)
+	r.svc.Apps = func() ([]string, error) { return []string{"nextcloud", "immich", "tasks"}, nil }
+	for _, g := range []string{"homestead-tasks-users", "homestead-tasks-admins"} {
+		r.f.groups[g] = nil
+	}
+	var calls []string
+	down := map[string]bool{}
+	r.svc.Purge = &purge.Service{
+		DB: r.db,
+		Apps: func(context.Context) ([]purge.Target, error) {
+			return []purge.Target{{App: "tasks", Container: "tasks-tasks"}}, nil
+		},
+		Exec: func(_ context.Context, c string, argv ...string) (string, error) {
+			calls = append(calls, c+" "+strings.Join(argv, " "))
+			if down[c] {
+				return "", errors.New("not running")
+			}
+			return "purged 1 people\n", nil
+		},
+		Audit: func(actor, action, outcome, detail string) { r.logs = append(r.logs, action+"|"+outcome+"|"+detail) },
+	}
+	return r, &calls, down
+}
+
+func TestRevokePurgesOnlyEverythingApps(t *testing.T) {
+	r, calls, _ := purgeRig(t)
+	p, _ := r.add("ada", Grant{"nextcloud", RoleUser}, Grant{"tasks", RoleUser})
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "nextcloud"); err != nil || len(*calls) != 0 {
+		t.Fatalf("a non-Everything app is not purged: %v %q", err, *calls)
+	}
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "tasks"); err != nil || len(*calls) != 1 {
+		t.Fatalf("%v %q", err, *calls)
+	}
+	if !strings.Contains((*calls)[0], "-app tasks -subject=") || !strings.Contains(strings.Join(r.logs, "\n"), "sharing purged in tasks") {
+		t.Fatalf("%q %q", *calls, r.logs)
+	}
+}
+
+func TestRemoveStoresPendingPurgeAndListShowsIt(t *testing.T) {
+	r, calls, down := purgeRig(t)
+	p, _ := r.add("ada", Grant{"immich", RoleUser})
+	down["tasks-tasks"] = true
+	if err := r.svc.Remove(bg, "owner", p.ID); err != nil {
+		t.Fatalf("removal must not wait on the purge: %v", err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("%q", *calls)
+	}
+	v, _ := r.svc.List(bg)
+	if len(v.People) != 0 || len(v.Purges) != 1 || v.Purges[0].App != "tasks" || v.Purges[0].Username != "ada" {
+		t.Fatalf("%+v", v.Purges)
+	}
+	if !strings.Contains(strings.Join(r.logs, "\n"), "removed ada") || !strings.Contains(strings.Join(r.logs, "\n"), "purge pending in tasks") {
+		t.Fatalf("%q", r.logs)
+	}
+}
+
+func TestGrantAgainCancelsPendingPurge(t *testing.T) {
+	r, _, down := purgeRig(t)
+	p, _ := r.add("ada", Grant{"tasks", RoleUser})
+	down["tasks-tasks"] = true
+	if _, err := r.svc.Revoke(bg, "owner", p.ID, "tasks"); err != nil {
+		t.Fatal(err)
+	}
+	if !r.svc.Purge.HasPending() {
+		t.Fatal("pending expected")
+	}
+	if _, err := r.svc.Grant(bg, "owner", p.ID, Grant{"tasks", RoleUser}); err != nil {
+		t.Fatal(err)
+	}
+	if r.svc.Purge.HasPending() {
+		t.Fatal("access is back: the stored purge must be dropped")
+	}
+}
+
+// S456: sign-in off then on recreates the app's groups empty; applying it
+// restores the recorded grants, so nobody shows as drifted.
+func TestRestoreAppRepopulatesGroupsFromGrants(t *testing.T) {
+	r := newRig(t)
+	u, _ := r.add("ada", Grant{"nextcloud", RoleUser})
+	a, _ := r.add("bob", Grant{"nextcloud", RoleAdmin})
+	r.f.groups["homestead-nextcloud-users"] = nil
+	r.f.groups["homestead-nextcloud-admins"] = nil
+	if v, _ := r.svc.List(bg); v.People[0].Status != StatusDrifted {
+		t.Fatalf("expected drift: %+v", v.People)
+	}
+	n, err := r.svc.RestoreApp(bg, "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 || !r.f.member("homestead-nextcloud-users", u.pk) || r.f.member("homestead-nextcloud-admins", u.pk) ||
+		!r.f.member("homestead-nextcloud-users", a.pk) || !r.f.member("homestead-nextcloud-admins", a.pk) {
+		t.Fatalf("n=%d groups=%v", n, r.f.groups)
+	}
+	v, _ := r.svc.List(bg)
+	for _, p := range v.People {
+		if p.Status != StatusOK {
+			t.Fatalf("%s still drifted: %+v", p.Username, p.Drift)
+		}
+	}
+	if n, err := r.svc.RestoreApp(bg, "immich"); err != nil || n != 0 {
+		t.Fatalf("an app nobody holds: %d %v", n, err)
 	}
 }

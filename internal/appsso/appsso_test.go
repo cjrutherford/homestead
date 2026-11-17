@@ -120,7 +120,7 @@ func TestANewNameReplansTheRedirects(t *testing.T) {
 	in := inputs(t, "jellyfin")
 	p, _ := BuildPlan(in, true)
 	in.Applied = &Record{Package: "jellyfin", Issuer: p.Issuer, RedirectURIs: p.RedirectURIs, PluginVersion: pluginState(p.Plugin), Access: p.Access}
-	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/sso/OID/start/authentik" {
+	if st := BuildStatus(in, false); st.Replan || !st.Enabled || st.SignInURL != "https://jellyfin.lan/apps/jellyfin/sso/OID/start/authentik" {
 		t.Fatalf("status: %+v", st)
 	}
 	same, _ := BuildPlan(in, true)
@@ -238,7 +238,7 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 	a, _ := AdapterFor(*m.SSO.OIDC)
 	// user_oidc is not installed yet: enable fails, install runs.
 	f.fail = func(c call) (string, error) {
-		if len(c.args) > 4 && c.args[3] == "app:enable" {
+		if len(c.args) > 4 && c.args[3] == "app:enable" && c.args[4] == "user_oidc" {
 			return "user_oidc not found", errors.New("exit 1")
 		}
 		return "", nil
@@ -254,6 +254,8 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 		}
 		if c.args[0] == "php" {
 			verbs = append(verbs, c.args[3])
+		} else if strings.HasPrefix(c.args[len(c.args)-1], nextcloudAppDir+"/") {
+			verbs = append(verbs, "write")
 		} else {
 			verbs = append(verbs, "provider")
 			if c.stdin != clientSecret+"\n" || !strings.Contains(strings.Join(c.args, " "), "https://authentik.lan/application/o/homestead-nextcloud/.well-known/openid-configuration") {
@@ -261,11 +263,28 @@ func TestNextcloudAdapterUsesOccAndStdinForTheSecret(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(verbs, ",") != "status,app:enable,app:install,security:certificates:import,config:app:set,config:system:set,config:system:set,provider" {
+	if strings.Join(verbs, ",") != "status,app:enable,app:install,write,write,write,app:enable,security:certificates:import,config:app:set,config:system:set,config:system:set,app:disable,provider" {
 		t.Fatalf("verbs: %v", verbs)
 	}
 	if f.argvHolds(clientSecret) {
 		t.Fatal("secret in argv")
+	}
+	// S500: the admin app is written whole and enabled; its listener keeps
+	// the real admin group in step with the claim's admin alias.
+	var written string
+	for _, c := range f.calls {
+		written += c.stdin
+	}
+	for _, want := range []string{"<id>homestead_sso</id>", "UserLoggedInEvent", "getBackendClassName() !== 'user_oidc'", "adminGroupIds", "removeUser"} {
+		if !strings.Contains(written, want) {
+			t.Fatalf("admin app lacks %q", want)
+		}
+	}
+	if !strings.Contains(fmt.Sprint(f.calls), "app:enable homestead_sso") {
+		t.Fatalf("admin app not enabled: %+v", f.calls)
+	}
+	if !strings.Contains(fmt.Sprint(f.calls), "app:disable firstrunwizard") {
+		t.Fatalf("welcome wizard stays on: %+v", f.calls)
 	}
 	if !strings.Contains(fmt.Sprint(f.calls), "overwriteprotocol --value=https") {
 		t.Fatalf("overwriteprotocol: %+v", f.calls)
@@ -440,6 +459,13 @@ func TestApplyOnThenOff(t *testing.T) {
 	// Publishing moves the app to Authentik's public address (ADR-047):
 	// the host entry follows the issuer, the old one goes.
 	in.Applied = &rec
+	// An unpublished app with a name of its own keeps the local address
+	// even when the public one is answered (only path apps move, S408).
+	unpub := in
+	unpub.PublicAuthentikURL = "https://homestead.example.com/apps/auth"
+	if p, _ := BuildPlan(unpub, true); strings.Contains(p.Issuer, "example.com") {
+		t.Fatalf("unpublished host app issuer = %s", p.Issuer)
+	}
 	pub := in
 	pub.Routes = append([]docker.Route(nil), in.Routes...)
 	pub.Routes[0].Tunnel = []docker.Hostname{"immich.example.com"}
@@ -687,5 +713,92 @@ func TestSettingsFromBeforeReplan(t *testing.T) {
 	again, _ := BuildPlan(in, true)
 	if !strings.Contains(strings.Join(again.Changes, "\n"), "Sign in with Authentik button are rewritten") || strings.Contains(strings.Join(again.Changes, "\n"), "replaces") {
 		t.Fatalf("changes: %v", again.Changes)
+	}
+}
+
+// S400: Jellyfin serves under its app path (BaseUrl) on a name of its own
+// and on the appliance's names alike; the sign-in URL carries the path
+// once, never twice.
+func TestJellyfinSignInURLCarriesItsPath(t *testing.T) {
+	m := manifest(t, "jellyfin")
+	a, err := AdapterFor(*m.SSO.OIDC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for origin, want := range map[string]string{
+		"https://jellyfin.lan":                "https://jellyfin.lan/apps/jellyfin/sso/OID/start/authentik",
+		"https://homestead.lan/apps/jellyfin": "https://homestead.lan/apps/jellyfin/sso/OID/start/authentik",
+	} {
+		if got := signInURL(a, m, origin); got != want {
+			t.Errorf("%s: %s", origin, got)
+		}
+	}
+	n := manifest(t, "nextcloud")
+	na, _ := AdapterFor(*n.SSO.OIDC)
+	if got := signInURL(na, n, "https://nextcloud.lan"); got != "https://nextcloud.lan/login" {
+		t.Errorf("nextcloud: %s", got)
+	}
+}
+
+// S456: applying sign-in puts people's recorded grants back into the app's
+// Authentik groups; turning it off does not.
+func TestApplyRestoresPeoplesAccess(t *testing.T) {
+	stubDocker(t)
+	st, err := store.Open(filepath.Join(t.TempDir(), "homestead.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, catalog.OverrideFileName), []byte("services:\n  server:\n    environment:\n      TZ: UTC\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var restored []string
+	var order []string
+	failRestore := false
+	rt := Runtime{Records: Records{DB: st.DB()}, Secrets: &memSecrets{m: map[string]string{}}, StackDir: func(string) string { return dir },
+		RootPEM: func() ([]byte, error) {
+			return []byte("-----BEGIN CERTIFICATE-----\nroot\n-----END CERTIFICATE-----\n"), nil
+		},
+		RestoreAccess: func(_ context.Context, app string) (int, error) {
+			order = append(order, "restore")
+			if failRestore {
+				return 0, errors.New("authentik refused")
+			}
+			restored = append(restored, app)
+			return 2, nil
+		}}
+	in := inputs(t, "immich")
+	run := func(on bool) error {
+		plan, _ := BuildPlan(in, on)
+		def, err := Definition(rt, plan, in.Manifest, dashboard, &fakeAuthentik{}, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, step := range def.Steps {
+			if err := step.Run(context.Background()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := run(true); err != nil {
+		t.Fatal(err)
+	}
+	if len(restored) != 1 || restored[0] != "immich" {
+		t.Fatalf("restored = %v", restored)
+	}
+	rec, _, _ := Records{DB: st.DB()}.Get("immich")
+	in.Applied = &rec
+	if err := run(false); err != nil {
+		t.Fatal(err)
+	}
+	if len(order) != 1 {
+		t.Fatalf("turning off restored people: %v", order)
+	}
+	failRestore = true
+	in.Applied = nil
+	if err := run(true); err == nil || !strings.Contains(err.Error(), "refused") {
+		t.Fatalf("a failed restore must fail the apply: %v", err)
 	}
 }

@@ -114,6 +114,11 @@ func AdapterFor(d catalog.OIDCAdapter) (Adapter, error) {
 		return immich{}, nil
 	case catalog.AdapterNextcloud:
 		return nextcloud{}, nil
+	case catalog.AdapterEnvOIDC:
+		if d.Env == nil {
+			return nil, fmt.Errorf("appsso: %s needs its env settings", d.Adapter)
+		}
+		return envOIDC{cfg: *d.Env}, nil
 	case catalog.AdapterJellyfinSSO:
 		if d.Plugin == nil {
 			return nil, fmt.Errorf("appsso: %s needs a pinned plugin", d.Adapter)
@@ -301,6 +306,7 @@ func (nextcloud) OnSettings(issuer, clientID string) []string {
 	return []string{
 		"Nextcloud app user_oidc: installed from the Nextcloud app store and enabled.",
 		fmt.Sprintf("user_oidc provider %q: client id %s, discovery %s.well-known/openid-configuration, scopes openid email profile groups.", ProviderKey, clientID, issuer),
+		"Nextcloud app homestead_sso (written by Homestead): at each sign-in a person in the admins group is put in Nextcloud's admin group and one who is not is taken out of it (user_oidc hashes group ids, so its own group sync cannot do this). The local admin account is never touched.",
 		"user_oidc keeps the password login form (allow_multiple_user_backends 1). Accounts are created at first sign-in.",
 		"Nextcloud trusts the appliance root (security:certificates:import) and may reach addresses on the appliance (allow_local_remote_servers true).",
 		"Nextcloud builds its links with https (overwriteprotocol https): the edge ends TLS for every route, and user_oidc refuses plain http.",
@@ -315,7 +321,7 @@ func (nextcloud) OffSettings() []string {
 
 func (nextcloud) Roles(g GroupNames) RoleMapping {
 	return RoleMapping{Mapped: true, AdminAlias: "admin",
-		Note: fmt.Sprintf("Nextcloud user_oidc group provisioning (claim groups): Nextcloud groups follow the homestead- groups, and members of %s are also put in Nextcloud's admin group, so they are administrators.", g.Admins)}
+		Note: fmt.Sprintf("Nextcloud user_oidc group provisioning (claim groups): Nextcloud groups follow the homestead- groups, and members of %s are also put in Nextcloud's real admin group at each sign-in (the homestead_sso app), and taken out when removed, so they are administrators.", g.Admins)}
 }
 
 func (nextcloud) TrustEnv() map[string]string { return nil }
@@ -431,11 +437,19 @@ func (a nextcloud) Enable(ctx context.Context, t Target, s Settings) error {
 			return fmt.Errorf("appsso: install user_oidc: %w", err)
 		}
 	}
+	if err := a.installAdminApp(ctx, t); err != nil {
+		return err
+	}
 	steps := [][]string{
 		{"security:certificates:import", CAFile},
 		{"config:app:set", "user_oidc", "allow_multiple_user_backends", "--value=1"},
 		{"config:system:set", "allow_local_remote_servers", "--value=true", "--type=boolean"},
 		{"config:system:set", "overwriteprotocol", "--value=https"},
+		// The Nextcloud Hub introduction video opens over every person's
+		// first page (S459, ADR-059). It is a per-person welcome screen,
+		// not setup, but nobody should have to dismiss it; the app
+		// answers success when it is already off or absent.
+		{"app:disable", "firstrunwizard"},
 	}
 	for _, args := range steps {
 		if _, err := a.occ(ctx, t, "", args...); err != nil {
@@ -456,6 +470,9 @@ func (a nextcloud) Disable(ctx context.Context, t Target) error {
 		!strings.Contains(strings.ToLower(out), "not defined") {
 		return fmt.Errorf("appsso: delete the user_oidc provider: %w", err)
 	}
+	// The admin app only reacts to user_oidc sign-ins; off with it. Rights
+	// already given stay until the person's admin group is changed in Nextcloud.
+	_, _ = a.occ(ctx, t, "", "app:disable", nextcloudAdminApp)
 	if _, err := a.occ(ctx, t, "", "app:disable", "user_oidc"); err != nil {
 		return fmt.Errorf("appsso: disable user_oidc: %w", err)
 	}

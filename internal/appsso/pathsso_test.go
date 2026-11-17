@@ -63,15 +63,16 @@ func TestPathAppsSignInUnderTheirPaths(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
+		if w := wiring(m, adapter, p.Issuer, Settings{}); fmt.Sprint(w.ExtraHosts) != "[homestead.lan:host-gateway]" {
 			t.Fatalf("%s: back channel = %v", c.name, w.ExtraHosts)
 		}
 	}
 }
 
 // ADR-047 §1-2: a published app signs in at Authentik's public address
-// once the edge answers it on this box, and its host entry follows; an
-// unpublished app keeps the local one; until then the plan says why.
+// once the edge answers it on this box, and its host entry follows; until
+// then the plan says why. An unpublished app served by path signs in at
+// the public address too (S408).
 func TestPublishedAppsSignInAtPublicAddress(t *testing.T) {
 	dash := docker.Route{Host: "homestead.lan", Dashboard: true, Exposure: docker.ExposureLocal, TLS: docker.TLSInternal,
 		Tunnel: []docker.Hostname{"homestead.example.com"}}
@@ -100,13 +101,18 @@ func TestPublishedAppsSignInAtPublicAddress(t *testing.T) {
 	if p.Issuer != public || p.ReplacedIssuer != "" {
 		t.Fatalf("published issuer = %s (replaces %q)", p.Issuer, p.ReplacedIssuer)
 	}
-	if w := wiring(m, adapter, p.Issuer); fmt.Sprint(w.ExtraHosts) != "[homestead.example.com:host-gateway]" ||
+	if w := wiring(m, adapter, p.Issuer, Settings{}); fmt.Sprint(w.ExtraHosts) != "[homestead.example.com:host-gateway]" ||
 		!strings.Contains(strings.Join(p.AppSettings, " "), "resolves homestead.example.com to the appliance edge") {
 		t.Fatalf("back channel = %v, settings %v", w.ExtraHosts, p.AppSettings)
 	}
 
-	if p, _ = BuildPlan(inputs(false, "https://homestead.example.com/apps/auth", "", nil), true); p.Issuer != local {
-		t.Fatalf("unpublished issuer = %s", p.Issuer)
+	// S408: an app served by path shares the dashboard's origin, so it
+	// signs in at the public address even when it is not published.
+	if p, _ = BuildPlan(inputs(false, "https://homestead.example.com/apps/auth", "", nil), true); p.Issuer != public {
+		t.Fatalf("unpublished path app issuer = %s", p.Issuer)
+	}
+	if p, _ = BuildPlan(inputs(false, "", "add a certificate.", nil), true); p.Issuer != local || strings.Contains(strings.Join(p.Warnings, " "), "cannot sign in") {
+		t.Fatalf("unpublished path app, no public address: %s %v", p.Issuer, p.Warnings)
 	}
 
 	waiting := "add a certificate for homestead.example.com."

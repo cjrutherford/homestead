@@ -21,6 +21,8 @@ import { catchError, map, switchMap } from 'rxjs/operators';
 import { SessionService } from '../auth/session.service';
 import {
   ApiService,
+  AppAccessChoice,
+  AppAccessRole,
   AppPublicPlan,
   AppPublicRequest,
   AppPublicStatus,
@@ -46,7 +48,6 @@ import { ApprovedPlan, approvedPlan, Permit } from '../ui/permit';
 import { publicError } from './app-public';
 import { appRoutes, mergeRoutes, routeFromManifest } from './app-routes';
 import { AppSetup } from './app-setup';
-import { PeopleService, Person } from '../people/people.service';
 import { BrowserAdvisories } from './browser-advisories';
 import { curatedFor } from './curated-copy';
 import { FolderRow, InstallDraft, InstallDrafts } from './install-drafts';
@@ -160,7 +161,6 @@ export class InstallWizard implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
   private readonly sessions = inject(SessionService);
-  private readonly peopleService = inject(PeopleService);
 
   private readonly heading = viewChild<ElementRef<HTMLElement>>('stepHeading');
 
@@ -201,10 +201,34 @@ export class InstallWizard implements OnInit {
   protected readonly signInPreview = computed(() => this.plan()?.sign_in ?? null);
   /** S326: the craft apps the install's setup links to Nextcloud for files. */
   protected readonly filesLink = computed(() => this.plan()?.files_link ?? null);
-  /** People who can be granted the app with the install (S317); null until read, or when Homestead cannot manage people. */
-  protected readonly signInPeople = signal<Person[] | null>(null);
-  protected readonly grantIds = signal<number[]>([]);
-  private peopleAsked = false;
+  /** S390: each managed person must have an explicit access choice. */
+  protected readonly accessRoles = signal<Record<number, AppAccessRole>>({});
+  private readonly accessRosterKey = signal<string | null>(null);
+  protected readonly accessPlan = computed(() => this.plan()?.access ?? null);
+  protected readonly accessChoices = computed<AppAccessChoice[]>(() =>
+    this.accessPlan()?.mode === 'managed'
+      ? this.accessPlan()!.people.flatMap((person) => {
+          if (person.state !== 'active') {
+            return [{ person_id: person.id, role: 'none' as const }];
+          }
+          const role = this.accessRoles()[person.id];
+          return role ? [{ person_id: person.id, role }] : [];
+        })
+      : [],
+  );
+  protected readonly accessSelectionComplete = computed(() => {
+    const access = this.accessPlan();
+    return access !== null && access.mode !== 'unavailable' && (access.mode !== 'managed' || access.people.every(
+      (person) => person.state !== 'active' || Object.hasOwn(this.accessRoles(), person.id),
+    ));
+  });
+  protected readonly accessUnavailable = computed(() => this.accessPlan()?.mode === 'unavailable');
+  protected readonly managedAccess = computed(() => this.accessPlan()?.mode === 'managed');
+  protected readonly hasAdminAccess = computed(() => this.accessChoices().some((choice) => choice.role === 'admin'));
+  protected readonly managedSignInRequired = computed(() => this.accessPlan()?.mode === 'managed');
+  protected readonly managedSignInReady = computed(() =>
+    !this.managedSignInRequired() || (this.signInPreview()?.offered === true && this.signInPreview()?.plan !== undefined),
+  );
 
   // S313: the public address, planned and approved with the install and
   // applied by its digest once the app is installed.
@@ -248,6 +272,7 @@ export class InstallWizard implements OnInit {
     () =>
       this.tunnelReady() &&
       this.name() !== 'authentik' &&
+      this.manifest()?.Publish !== 'never' &&
       this.endpoints().length > 0 &&
       !this.installed() &&
       !this.pathNeedsServer(),
@@ -426,16 +451,6 @@ export class InstallWizard implements OnInit {
 
   constructor() {
     effect(() => {
-      // S317: offer to grant people the app when sign-in is part of this install.
-      if (this.signInPreview()?.offered && !this.peopleAsked) {
-        this.peopleAsked = true;
-        this.peopleService.people().subscribe({
-          next: (view) => this.signInPeople.set(view.token_kept ? (view.people ?? []) : null),
-          error: () => this.signInPeople.set(null),
-        });
-      }
-    });
-    effect(() => {
       const name = this.name();
       if (!name || this.loading() || this.manifest() === null) {
         return;
@@ -515,7 +530,7 @@ export class InstallWizard implements OnInit {
     const ports: Record<string, string> = {};
     for (const service of manifest.Services) {
       if (service.Exposes !== '') {
-        ports[service.Name] = defaultContainerPort(manifest);
+        ports[service.Name] = defaultContainerPort(manifest, service.Name);
       }
     }
     this.containerPorts.set(ports);
@@ -906,6 +921,7 @@ export class InstallWizard implements OnInit {
     return this.api.planInstall(manifest.Name, this.body()).pipe(
       switchMap((plan) => {
         this.planning.set(false);
+        this.updateAccessRoster(plan);
         this.plan.set(plan);
         // The review shows the public address permit beside the install's.
         if (this.current() !== 'review') {
@@ -937,7 +953,8 @@ export class InstallWizard implements OnInit {
     }
     this.publicPlanning.set(true);
     this.publicPlanProblem.set(null);
-    const request: AppPublicRequest = { enabled: true, hostname: this.publicHost(), route, before_install: true };
+    const request: AppPublicRequest = { enabled: true, hostname: this.publicHost(), route, before_install: true,
+      ...(this.managedAccess() ? { anticipate_sign_in: true } : {}) };
     return this.api.appPublicPlan(manifest.Name, request).pipe(
       map((plan) => {
         this.publicPlanning.set(false);
@@ -1099,11 +1116,8 @@ export class InstallWizard implements OnInit {
       setup.public = { hostname: published.hostname, route: published.route, digest: published.digest };
     }
     const signIn = this.signInPreview();
-    if (signIn?.offered && signIn.plan && this.signInWanted()) {
+    if (signIn?.offered && signIn.plan && (this.managedSignInRequired() || this.signInWanted())) {
       setup.sign_in = { digest: signIn.plan.digest };
-      if (this.grantIds().length > 0) {
-        setup.people = [...this.grantIds()];
-      }
     }
     // S326 (ADR-048 §4): the Nextcloud link the review lists runs with the
     // rest, after the address; it needs no approval of its own.
@@ -1113,8 +1127,37 @@ export class InstallWizard implements OnInit {
     }
     body['setup'] = setup;
     this.setupView.set(null);
+    const access = this.accessPlan();
+    if (!access || access.mode === 'unavailable' || !this.accessSelectionComplete() ||
+      (access.mode === 'managed' && (!signIn?.offered || !signIn.plan))) {
+      this.starting.set(false);
+      this.failure.set({
+        headline: 'App access is not ready.',
+        fix: access?.reason ?? (access?.mode === 'managed'
+          ? 'Choose an access role for every active person and keep managed sign-in enabled.'
+          : 'Review the app access plan before installing.'),
+        installed: false,
+      });
+      return;
+    }
+    const accessChoices = this.accessChoices();
     this.assignChosenStorage()
-      .pipe(switchMap(() => this.api.installPackage(manifest.Name, body)))
+      .pipe(
+        switchMap(() => {
+          if (access.mode !== 'managed') {
+            return this.api.installPackage(manifest.Name, body);
+          }
+          return this.api.planCatalogAccess(manifest.Name, { ...this.body(), choices: accessChoices }).pipe(
+            switchMap(({ digest }) => {
+              setup.access = { digest, choices: accessChoices };
+              body['setup'] = setup;
+              return this.hasAdminAccess()
+                ? this.api.installPackageAdmin(manifest.Name, body)
+                : this.api.installPackage(manifest.Name, body);
+            }),
+          );
+        }),
+      )
       .subscribe({
       next: ({ id }) => {
         this.starting.set(false);
@@ -1317,8 +1360,24 @@ export class InstallWizard implements OnInit {
     });
   }
 
-  protected toggleGrant(id: number, on: boolean): void {
-    this.grantIds.update((ids) => (on ? [...ids.filter((x) => x !== id), id] : ids.filter((x) => x !== id)));
+  protected setAccessRole(id: number, role: AppAccessRole): void {
+    const person = this.accessPlan()?.people.find((entry) => entry.id === id);
+    if (!person || person.state !== 'active' || !['none', 'user', 'admin'].includes(role) ||
+      (role === 'admin' && !this.accessPlan()?.admin_supported)) {
+      return;
+    }
+    this.accessRoles.update((roles) => ({ ...roles, [id]: role }));
+  }
+
+  private updateAccessRoster(plan: InstallPlan): void {
+    const access = plan.access;
+    const key = access
+      ? JSON.stringify([access.mode, access.people.map(({ id, display_name, username, state }) => [id, display_name, username, state])])
+      : null;
+    if (this.accessRosterKey() !== key) {
+      this.accessRoles.set({});
+      this.accessRosterKey.set(key);
+    }
   }
 
   /** Merges the planned routes into the table; no existing route is dropped. */

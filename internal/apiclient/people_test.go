@@ -18,16 +18,19 @@ func TestPeopleClientErrorCodeAndPaths(t *testing.T) {
 			http.Error(w, "no token", http.StatusUnprocessableEntity)
 			return
 		}
-		_, _ = w.Write([]byte(`{"person":{"id":9,"username":"sam"}}`))
+		_, _ = w.Write([]byte(`{"person":{"id":9,"username":"sam"},"warnings":["w1"]}`))
 	}))
 	defer ts.Close()
 	c := New(ts.URL)
 	ctx := context.Background()
-	p, err := c.GrantPersonApp(ctx, 9, "immich", true)
-	if err != nil || p.Username != "sam" {
+	res, err := c.GrantPersonApp(ctx, 9, "immich", true)
+	if p := res.Person; err != nil || p.Username != "sam" {
 		t.Fatalf("%v %+v", err, p)
 	}
-	err = c.RemovePerson(ctx, 9)
+	if len(res.Warnings) != 1 || res.Warnings[0] != "w1" {
+		t.Fatalf("warnings %v", res.Warnings)
+	}
+	_, err = c.RemovePerson(ctx, 9)
 	se, ok := err.(*StatusError)
 	if !ok || se.Code != PeopleNoToken {
 		t.Fatalf("err %v", err)

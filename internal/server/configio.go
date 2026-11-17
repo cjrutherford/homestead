@@ -2,8 +2,10 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
+	"homestead/internal/audit"
 	"homestead/internal/desired"
 	"homestead/internal/secret"
 )
@@ -13,10 +15,31 @@ import (
 // answers the portable document (secret names only, never values);
 // import validates it, demands every secret value, and restores
 // settings plus secrets. Values arrive per call and never persist
-// in the document.
-func (s *Server) MountConfigIO(desiredPath string, secrets *secret.Store) {
+// in the document. Settings are validated against the config schema
+// (the same rules as `config apply`); import needs a step-up (S502).
+func (s *Server) MountConfigIO(desiredPath string, secrets *secret.Store, auditSvc *audit.Service, validate desired.SettingsValidator) {
 	s.mux.HandleFunc("GET /api/v1/config/export", handleConfigExport(desiredPath, secrets))
-	s.mux.HandleFunc("POST /api/v1/config/import", handleConfigImport(desiredPath, secrets))
+	s.mux.HandleFunc("POST /api/v1/config/import/preview", handleConfigImportPreview(desiredPath, validate))
+	s.mux.HandleFunc("POST /api/v1/config/import", handleConfigImport(desiredPath, secrets, auditSvc, validate))
+}
+
+// previewBody carries the document text (YAML or JSON) to check.
+type previewBody struct {
+	Text string `json:"text"`
+}
+
+// handleConfigImportPreview validates an uploaded document and shows
+// the settings it would change, writing nothing (S483).
+func handleConfigImportPreview(desiredPath string, validate desired.SettingsValidator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body previewBody
+		if err := decodeBody(r, &body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, desired.PreviewImport([]byte(body.Text), desiredPath, validate))
+	}
 }
 
 // importBody carries the inline document plus secret values keyed by
@@ -28,6 +51,7 @@ type importBody struct {
 
 func handleConfigExport(desiredPath string, secrets *secret.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		wantYAML := r.URL.Query().Get("format") == "yaml"
 		export, err := desired.ExportState(desiredPath, secrets)
 		if err != nil {
 			if errors.Is(err, desired.ErrNotFound) {
@@ -37,11 +61,25 @@ func handleConfigExport(desiredPath string, secrets *secret.Store) http.HandlerF
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if wantYAML {
+			// The same bytes `config export -f` writes. The document
+			// carries secret names, never values, so no fresh sign-in
+			// is needed (S483).
+			body, err := desired.MarshalExportYAML(export)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/yaml")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(body)
+			return
+		}
 		writeJSON(w, export)
 	}
 }
 
-func handleConfigImport(desiredPath string, secrets *secret.Store) http.HandlerFunc {
+func handleConfigImport(desiredPath string, secrets *secret.Store, auditSvc *audit.Service, validate desired.SettingsValidator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body importBody
 		if err := decodeBody(r, &body); err != nil {
@@ -51,11 +89,27 @@ func handleConfigImport(desiredPath string, secrets *secret.Store) http.HandlerF
 		if body.Secrets == nil {
 			body.Secrets = map[string]string{}
 		}
-		summary, err := desired.ImportExport(body.Document, desiredPath, secrets, body.Secrets)
+		actor := "owner"
+		if op, ok := operatorFromContext(r.Context()); ok && op.Session.Username != "" {
+			actor = op.Session.Username
+		}
+		summary, err := desired.ImportExport(body.Document, desiredPath, secrets, body.Secrets, validate)
 		if err != nil {
+			recordImportAudit(auditSvc, actor, audit.OutcomeError, "config import refused")
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		recordImportAudit(auditSvc, actor, audit.OutcomeOK,
+			fmt.Sprintf("config import restored %d settings and %d secrets (names only)", summary.Settings, summary.Secrets))
 		writeJSON(w, map[string]any{"settings": summary.Settings, "secrets": summary.Secrets})
 	}
+}
+
+// recordImportAudit leaves the import in the audit log: who, outcome,
+// counts. Secret names and values are never written.
+func recordImportAudit(svc *audit.Service, actor, outcome, detail string) {
+	if svc == nil {
+		return
+	}
+	_, _ = svc.Record(audit.Entry{Actor: actor, Action: "config.import", Outcome: outcome, Detail: detail})
 }

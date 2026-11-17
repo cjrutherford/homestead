@@ -10,8 +10,8 @@ import { Home } from './home';
 
 const APPS = {
   apps: [
-    { name: 'jellyfin', title: 'Jellyfin', icon: 'mdi:movie', role: 'user', url: 'https://homestead.lan/apps/jellyfin/' },
-    { name: 'immich', title: 'Immich', icon: 'mdi:image', role: 'user', url: 'https://immich.homestead.lan/' },
+    { name: 'jellyfin', title: 'Jellyfin', icon: 'mdi:movie', role: 'user', url: 'https://homestead.lan/apps/jellyfin/', local_url: 'https://homestead.lan/apps/jellyfin/', public_url: 'https://home.example.com/apps/jellyfin/' },
+    { name: 'immich', title: 'Immich', icon: 'mdi:image', role: 'user', url: 'https://immich.homestead.lan/', local_url: 'https://immich.homestead.lan/' },
   ],
 };
 
@@ -48,15 +48,27 @@ describe('Home (S339)', () => {
   it('greets a person by name and shows a tile link per app, with no Administration link', async () => {
     const el = await settled(open({ role: 'person', display_name: 'Sam Rivera', username: 'sam' }, APPS));
     expect(el.querySelector('h1')?.textContent).toContain('Hello, Sam Rivera');
-    const tiles = Array.from(el.querySelectorAll('a.tile'));
-    expect(tiles.map((t) => t.getAttribute('href'))).toEqual([
-      'https://homestead.lan/apps/jellyfin/',
-      'https://immich.homestead.lan/',
-    ]);
+    const tiles = Array.from(el.querySelectorAll('.tile'));
+    expect(tiles.length).toBe(2);
     expect(tiles[0].textContent).toContain('Jellyfin');
-    expect(tiles[0].hasAttribute('target')).toBe(false);
+    // Every tile carries its local link; the public link waits for publishing.
+    const links = (tile: Element) => Array.from(tile.querySelectorAll('a.tile-link')).map((a) => [a.textContent?.trim(), a.getAttribute('href')]);
+    expect(links(tiles[0])).toEqual([
+      ['Local', 'https://homestead.lan/apps/jellyfin/'],
+      ['Public', 'https://home.example.com/apps/jellyfin/'],
+    ]);
+    expect(links(tiles[1])).toEqual([['Local', 'https://immich.homestead.lan/']]);
+    expect(tiles[1].textContent).toContain('Not public');
+    expect(tiles[0].querySelector('a')?.hasAttribute('target')).toBe(false);
     expect(el.textContent).not.toContain('Administration');
     expect(el.textContent).toContain('Sign out');
+  });
+
+  it('links every signed-in user to the owner guide (S494)', async () => {
+    const el = await settled(open({ role: 'person', display_name: 'Sam Rivera', username: 'sam' }, APPS));
+    const link = el.querySelector('a.guide-link');
+    expect(link?.getAttribute('href')).toBe('/guide/');
+    expect(link?.textContent).toContain('Guide');
   });
 
   it('gives the owner an Administration link to /admin', async () => {
@@ -72,7 +84,7 @@ describe('Home (S339)', () => {
     expect(el.textContent).toContain(
       'No apps are shared with you yet. Ask the owner of this Homestead to give you access.',
     );
-    expect(el.querySelector('a.tile')).toBeNull();
+    expect(el.querySelector('.tile')).toBeNull();
   });
 
   it('calls only /me and /me/apps', () => {

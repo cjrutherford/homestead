@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: designcraft
+publish: path  # ADR-062: public path behind the shared Authentik gate; the LAN stays open
 version: 0.8.0
 title: DesignCraft
 blurb: Page layout and publishing tool that runs in your browser.
@@ -37,9 +38,10 @@ exposure:
   endpoints:
   - endpoint: web
     recommended: local
-    allowwider: false
+    allowwider: true
     warnings:
     - DesignCraft stores nothing on the appliance, so widening exposure would offer a public layout tool whose documents never reach your storage; it has no Nextcloud file hook, so documents stay in each visitor's browser. Keep it local.
+    - If you publish it, its public path sits behind the Authentik gate, so only people granted this app and the owner can open it. Your local address stays open (ADR-062).
 browser:
 - capability: webgpu
   reason: "DesignCraft renders with WebGPU where the browser has it and falls back to WebGL2 on its own; ?webgl forces WebGL2 and ?cpu the slower CPU canvas."
@@ -53,3 +55,8 @@ browser:
   reason: "Preferences are kept in the browser's local storage, which the browser may clear; export documents to your device to keep them."
 sso:
   class: unsupported
+  # ADR-062: the app has no sign-in of its own. Published, its path is behind
+  # the shared Authentik gate on the tunnel entry only; the local names stay
+  # open (ADR-045). No identity header is passed on and nothing bypasses.
+  forwardauth:
+    service: designcraft

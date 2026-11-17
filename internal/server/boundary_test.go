@@ -12,11 +12,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
 	"homestead/internal/claim"
+	"homestead/internal/guide"
 	"homestead/internal/store"
 )
 
@@ -40,7 +42,7 @@ func fullServerApp(t *testing.T) (*Server, *store.Store, *AppServices) {
 	svcs, err := MountApp(srv, AppConfig{
 		Store: st, ConfigPath: filepath.Join(dir, "desired.yaml"), CatalogDir: "catalog",
 		SecretKeyPath: filepath.Join(dir, "key"), Port: 8080,
-		Dashboard: http.NotFoundHandler(),
+		Dashboard: http.NotFoundHandler(), Guide: guide.New(fstest.MapFS{"index.html": {Data: []byte("<h1>Guide</h1>")}}),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +92,8 @@ func TestEveryRegisteredRouteIsClassified(t *testing.T) {
 			t.Errorf("routeClasses has stale entry %q (not registered)", p)
 		}
 	}
-	if len(routes) != 171 {
-		t.Errorf("TCP route count = %d, want 171 (update deliberately with routeClasses)", len(routes))
+	if len(routes) != 182 {
+		t.Errorf("TCP route count = %d, want 182 (update deliberately with routeClasses)", len(routes))
 	}
 	counts := map[RouteClass]int{}
 	for _, p := range routes {

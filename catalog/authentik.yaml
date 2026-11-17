@@ -8,6 +8,7 @@
 # as 0600 files through Compose secrets (ADR-021), never environment values.
 # Authentik reads file:// URIs for its settings; postgres reads *_FILE.
 name: authentik
+publish: path  # ADR-061
 version: 2026.8.3
 title: Authentik
 blurb: Single sign-on for your services.
@@ -20,7 +21,9 @@ icon: mdi:key
 services:
 - name: server
   image: ghcr.io/goauthentik/server:2026.8.3
+  publisher: upstream
   exposes: web
+  containerport: 9000
   command: [server]
   environment:
     AUTHENTIK_POSTGRESQL__HOST: postgresql
@@ -45,6 +48,7 @@ services:
     gid: 1000
 - name: worker
   image: ghcr.io/goauthentik/server:2026.8.3
+  publisher: upstream
   exposes: ""
   command: [worker]
   environment:
@@ -70,6 +74,7 @@ services:
     gid: 1000
 - name: postgresql
   image: docker.io/library/postgres:16-alpine
+  publisher: upstream
   exposes: ""
   environment:
     POSTGRES_USER: authentik
@@ -94,7 +99,6 @@ requirements:
   storage:
   - class: application
     minbytes: 2147483648
-  ports: [9000]
 exposure:
   package: authentik
   endpoints:

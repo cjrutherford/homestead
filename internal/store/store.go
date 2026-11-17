@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 56
+const CurrentVersion = 59
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1064,6 +1064,48 @@ ALTER TABLE sso_state ADD COLUMN return_to TEXT NOT NULL DEFAULT '';`,
 ALTER TABLE sessions ADD COLUMN person_id INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS sessions_person ON sessions(person_id) WHERE person_id != 0;
 ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
+	},
+	{
+		version: 57,
+		name:    "everything purges",
+		// S427 (ADR-058 section 1): a purge of a removed person's Everything
+		// sharing that has not succeeded yet (the app's container was
+		// stopped). Rows are deleted when the purge succeeds.
+		sql: `CREATE TABLE everything_purges (
+	app TEXT NOT NULL,
+	username TEXT NOT NULL,
+	subject TEXT NOT NULL,
+	requested_at TEXT NOT NULL,
+	attempts INTEGER NOT NULL DEFAULT 0,
+	last_error TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (app, username, subject)
+);`,
+	},
+	{
+		// S479 (ADR-061): the old public name an app move is removing. The
+		// row is written when the move starts and deleted when the name is
+		// gone, so a move that stopped halfway can be finished and Doctor
+		// can say which app the leftover name belonged to.
+		version: 58,
+		name:    "app move pending public name",
+		sql: `CREATE TABLE IF NOT EXISTS app_move_pending (
+	app TEXT PRIMARY KEY,
+	hostname TEXT NOT NULL,
+	tunnel_id TEXT NOT NULL,
+	started_at TEXT NOT NULL
+);`,
+	},
+	{
+		// S505: the last background re-wrap of backups to the recovery key
+		// (one row, JSON summary of file counts and paths; never a key). A
+		// rotation writes it incomplete so a pending re-wrap survives a
+		// restart or an unmounted destination.
+		version: 59,
+		name:    "backup rewrap state",
+		sql: `CREATE TABLE IF NOT EXISTS backup_rewrap_state (
+	id INTEGER PRIMARY KEY CHECK (id = 1),
+	summary TEXT NOT NULL
+);`,
 	},
 }
 

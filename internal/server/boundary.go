@@ -94,6 +94,10 @@ var routeClasses = map[string]RouteClass{
 	"POST /api/v1/admins/setup": ClassPublic,
 	"POST /api/v1/sessions":     ClassPublic,
 	"/":                         ClassPublic, // dashboard static catch-all
+	// S494: the owner guide is static docs for any signed-in dashboard
+	// user (owner or person), so it is session class, on the person
+	// allowlist below.
+	"GET /guide/": ClassSession,
 	// ADR-030: the one read-only unauthenticated exception beyond the
 	// above. A device fetching the root cannot have an operator session.
 	// Both serve ONLY the public root certificate; the fingerprint the
@@ -170,9 +174,14 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/backups/identity":                        ClassSession,
 	"POST /api/v1/backups/identity/export":                ClassSession,
 	"POST /api/v1/backups/identity/ack":                   ClassSession,
+	"POST /api/v1/backups/identity/rotate":                ClassSession,
+	"POST /api/v1/backups/identity/rewrap":                ClassSession,
 	"GET /api/v1/catalog":                                 ClassSession,
+	"GET /api/v1/catalog/bundles":                         ClassSession,
 	"GET /api/v1/catalog/{name}":                          ClassSession,
 	"POST /api/v1/catalog/{name}/plan":                    ClassSession,
+	"POST /api/v1/catalog/{name}/access-plan":             ClassSession,
+	"POST /api/v1/catalog/{name}/install-admin":           ClassSession,
 	"POST /api/v1/catalog/{name}/install":                 ClassSession,
 	"POST /api/v1/catalog/{name}/configure":               ClassSession,
 	"GET /api/v1/catalog/{name}/secrets":                  ClassSession,
@@ -188,10 +197,15 @@ var routeClasses = map[string]RouteClass{
 	"GET /api/v1/catalog/{name}/reach":         ClassSession,
 	"POST /api/v1/catalog/{name}/public/plan":  ClassSession,
 	"POST /api/v1/catalog/{name}/public/apply": ClassSession,
+	// S433 (ADR-058): public exposure of Everything read links.
+	"GET /api/v1/apps/{name}/read-links":          ClassSession,
+	"POST /api/v1/apps/{name}/read-links/plan":    ClassSession,
+	"POST /api/v1/apps/{name}/read-links/approve": ClassSession,
 	// S324 (ADR-048 §3): the setup approved with an install.
-	"GET /api/v1/catalog/{name}/setup":         ClassSession,
-	"POST /api/v1/catalog/{name}/setup/resume": ClassSession,
-	"POST /api/v1/catalog/{name}/setup/skip":   ClassSession,
+	"GET /api/v1/catalog/{name}/setup":               ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume":       ClassSession,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": ClassSession,
+	"POST /api/v1/catalog/{name}/setup/skip":         ClassSession,
 	// S315 (ADR-044 §5): moving an installed app to its path.
 	"GET /api/v1/catalog/{name}/move":                    ClassSession,
 	"POST /api/v1/catalog/{name}/move/plan":              ClassSession,
@@ -205,6 +219,7 @@ var routeClasses = map[string]RouteClass{
 	"PUT /api/v1/config":                                 ClassSession,
 	"GET /api/v1/config/export":                          ClassSession,
 	"POST /api/v1/config/import":                         ClassSession,
+	"POST /api/v1/config/import/preview":                 ClassSession,
 	"GET /api/v1/docker/health":                          ClassSession,
 	"GET /api/v1/dockge":                                 ClassSession,
 	"GET /api/v1/doctor":                                 ClassSession,
@@ -316,25 +331,31 @@ var stepUpRoutes = map[string]stepUpMode{
 	"POST /api/v1/sso/apply":                              stepUpBoundary,
 	"DELETE /api/v1/sso":                                  stepUpBoundary,
 	"POST /api/v1/secrets/rekey":                          stepUpBoundary,
+	"POST /api/v1/config/import":                          stepUpBoundary,
 	"POST /api/v1/backups/identity/export":                stepUpBoundary,
+	"POST /api/v1/backups/identity/rotate":                stepUpBoundary,
 	"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 	// People (S317): admin grants, password and second-factor resets,
 	// removal, and settling drift (which can restore or accept an admin).
-	"PUT /api/v1/people/{id}/apps/{app}/admin": stepUpBoundary,
-	"POST /api/v1/people/{id}/password-reset":  stepUpBoundary,
-	"POST /api/v1/people/{id}/mfa-reset":       stepUpBoundary,
-	"POST /api/v1/people/{id}/remove":          stepUpBoundary,
-	"POST /api/v1/people/{id}/resolve":         stepUpBoundary,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       stepUpBoundary,
+	"POST /api/v1/catalog/{name}/install-admin":      stepUpBoundary,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": stepUpBoundary,
+	"POST /api/v1/people/{id}/password-reset":        stepUpBoundary,
+	"POST /api/v1/people/{id}/mfa-reset":             stepUpBoundary,
+	"POST /api/v1/people/{id}/remove":                stepUpBoundary,
+	"POST /api/v1/people/{id}/resolve":               stepUpBoundary,
 }
 
 // publicStepUpRoutes are the step-up routes a public dashboard name accepts
 // on a fresh Authentik step-up instead of the local password (ADR-049 §1).
 var publicStepUpRoutes = map[string]bool{
-	"PUT /api/v1/people/{id}/apps/{app}/admin": true,
-	"POST /api/v1/people/{id}/password-reset":  true,
-	"POST /api/v1/people/{id}/mfa-reset":       true,
-	"POST /api/v1/people/{id}/remove":          true,
-	"POST /api/v1/people/{id}/resolve":         true,
+	"POST /api/v1/catalog/{name}/install-admin":      true,
+	"POST /api/v1/catalog/{name}/setup/resume-admin": true,
+	"PUT /api/v1/people/{id}/apps/{app}/admin":       true,
+	"POST /api/v1/people/{id}/password-reset":        true,
+	"POST /api/v1/people/{id}/mfa-reset":             true,
+	"POST /api/v1/people/{id}/remove":                true,
+	"POST /api/v1/people/{id}/resolve":               true,
 }
 
 // ReauthHeader carries the local password for fresh re-authentication.
@@ -369,6 +390,7 @@ const (
 var personRoutes = map[string]bool{
 	"GET /api/v1/me":          true,
 	"GET /api/v1/me/apps":     true,
+	"GET /guide/":             true,
 	"DELETE /api/v1/sessions": true,
 }
 

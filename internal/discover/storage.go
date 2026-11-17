@@ -50,7 +50,7 @@ func DiscoverStorage() (Storage, error) {
 	if err != nil {
 		return Storage{}, fmt.Errorf("discover: read mountinfo: %w", err)
 	}
-	mounts := parseMountinfo(data)
+	mounts := dedupeMountpoints(parseMountinfo(data))
 	uuids := readDiskLinks(diskByUUID)
 	labels := readDiskLinks(diskByLabel)
 	for i := range mounts {
@@ -61,6 +61,23 @@ func DiscoverStorage() (Storage, error) {
 	}
 	sort.Slice(mounts, func(i, j int) bool { return mounts[i].Mountpoint < mounts[j].Mountpoint })
 	return Storage{Mounts: mounts}, nil
+}
+
+// dedupeMountpoints keeps one entry per mountpoint. A path mounted more than
+// once (a service namespace that binds a data path over itself, or stacked
+// mounts) is listed once; the later line is the visible one, so it wins.
+func dedupeMountpoints(mounts []Mount) []Mount {
+	last := make(map[string]int, len(mounts))
+	for i, m := range mounts {
+		last[m.Mountpoint] = i
+	}
+	out := mounts[:0:0]
+	for i, m := range mounts {
+		if last[m.Mountpoint] == i {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // parseMountinfo parses /proc/self/mountinfo lines:

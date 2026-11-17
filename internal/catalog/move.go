@@ -34,13 +34,17 @@ func MoveEnv(m Manifest, names []string) []ConfigChange {
 		for key, value := range svc.Environment {
 			switch {
 			case strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) ||
-				strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken):
+				strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
+				strings.Contains(value, AppURLToken):
+				value = strings.ReplaceAll(value, AppURLToken, "https://"+names[0]+bare)
 				value = strings.ReplaceAll(value, RouteURLToken, "https://"+names[0]+bare)
 				value = strings.ReplaceAll(value, RoutePathToken, bare)
 				value = strings.ReplaceAll(value, RouteHostToken, names[0])
 				value = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
 				set[key] = value
-			case value == path || value == bare:
+			// The path itself: with or without its leading slash (Linkding's
+			// LD_CONTEXT_PATH wants "apps/linkding/", S476).
+			case value == path || value == bare || value == strings.TrimPrefix(path, "/"):
 				set[key] = value
 			}
 		}
@@ -50,6 +54,83 @@ func MoveEnv(m Manifest, names []string) []ConfigChange {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Service < out[j].Service })
 	return out
+}
+
+// AppURLEnv is the environment an installed app needs for AppURLToken
+// to hold its current address (S407): the variables whose manifest
+// value uses the token, rendered for the local route host and, while the
+// app has one, its public hostname. Apps served by path keep the local
+// base URL and return nothing.
+func AppURLEnv(m Manifest, host, public string) []ConfigChange {
+	if m.ServedByPath() || host == "" {
+		return nil
+	}
+	var out []ConfigChange
+	for _, svc := range m.Services {
+		set := map[string]string{}
+		for key, value := range svc.Environment {
+			if strings.Contains(value, AppURLToken) {
+				set[key] = RenderRouteTokens(value, host, []string{host}, "", public)
+			}
+		}
+		if len(set) > 0 {
+			out = append(out, ConfigChange{Service: svc.Name, Set: set})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Service < out[j].Service })
+	return out
+}
+
+// AppURLChange is one variable of an installed app whose AppURLToken
+// value differs from what the app's address now calls for (S407).
+type AppURLChange struct {
+	Service, Key, Old, New string
+}
+
+// AppURLChanges compares the installed stack's effective environment
+// (generated compose file, then the override file) with the value
+// AppURLToken renders to for host and public. An app that does not use
+// the token, or is served by path, has none. Old is "" for a variable
+// the stack does not set.
+func AppURLChanges(m Manifest, dir, host, public string) ([]AppURLChange, error) {
+	want := AppURLEnv(m, host, public)
+	if len(want) == 0 {
+		return nil, nil
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "compose.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("catalog: read %s's compose file: %w", m.Name, err)
+	}
+	var doc struct {
+		Services map[string]struct {
+			Environment map[string]string `yaml:"environment"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("catalog: parse %s's compose file: %w", m.Name, err)
+	}
+	var out []AppURLChange
+	for _, change := range want {
+		override, err := OverrideEnv(dir, change.Service)
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(change.Set))
+		for k := range change.Set {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			current, ok := override[k]
+			if !ok {
+				current = doc.Services[change.Service].Environment[k]
+			}
+			if current != change.Set[k] {
+				out = append(out, AppURLChange{Service: change.Service, Key: k, Old: current, New: change.Set[k]})
+			}
+		}
+	}
+	return out, nil
 }
 
 // MoveSeed is one first-start file an existing install gets its path
@@ -161,4 +242,12 @@ func ApplyMoveSeed(seed MoveSeed) error {
 var StopStack = func(ctx context.Context, dir, project string) error {
 	defer lockProject(project)()
 	return composeRun(ctx, dir, project, "stop")
+}
+
+// StartStack brings a stack stopped for a move back up with the files
+// it was left with (S400), for apps whose move changes no environment.
+// composeUp takes the project lock itself; taking it here as well
+// deadlocked the move (S401).
+var StartStack = func(ctx context.Context, dir, project string) error {
+	return composeUp(ctx, dir, project)
 }

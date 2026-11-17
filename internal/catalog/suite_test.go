@@ -79,6 +79,7 @@ func TestCheckSuite(t *testing.T) {
 	}
 	// Port collisions across members fail with both owners named.
 	clash := append([]Manifest(nil), manifests...)
+	clash[0].Requirements.Ports = []int{8096}
 	dupe := clash[0]
 	dupe.Name = "jellyfin-twin"
 	dupe.Exposure.Package = "jellyfin-twin"

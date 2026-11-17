@@ -73,11 +73,11 @@ func TestLoginSetsHardenedSessionCookie(t *testing.T) {
 func TestSessionCookieSecureWhenTLS(t *testing.T) {
 	srv := setupOwner(t)
 	rec := loginRec(t, srv, func(r *http.Request) { r.Header.Set("X-Forwarded-Proto", "https") })
-	if c := cookieByName(rec, SessionCookieName); c == nil || !c.Secure {
+	if c := cookieByName(rec, HostSessionCookieName); c == nil || !c.Secure {
 		t.Fatalf("forwarded-https cookie not Secure: %+v", c)
 	}
 	rec = loginRec(t, srv, func(r *http.Request) { r.TLS = &tlsState })
-	for _, n := range []string{SessionCookieName, CSRFCookieName} {
+	for _, n := range []string{HostSessionCookieName, HostCSRFCookieName} {
 		if c := cookieByName(rec, n); c == nil || !c.Secure {
 			t.Fatalf("TLS cookie %s not Secure: %+v", n, c)
 		}
@@ -151,3 +151,63 @@ func TestBearerTakesPrecedenceOverCookie(t *testing.T) {
 }
 
 var tlsState = tls.ConnectionState{HandshakeComplete: true}
+
+// S470: over TLS the cookies carry the __Host- prefix (Secure, Path=/, no
+// Domain, as the prefix demands) and the unprefixed names are neither set
+// nor read; over plain HTTP the unprefixed names stay.
+func TestHostPrefixedCookiesOverTLS(t *testing.T) {
+	srv := setupOwner(t)
+	tls := loginRec(t, srv, func(r *http.Request) { r.Header.Set("X-Forwarded-Proto", "https") })
+	for _, n := range []string{SessionCookieName, CSRFCookieName} {
+		if c := cookieByName(tls, n); c != nil {
+			t.Fatalf("TLS login set the unprefixed cookie %s", n)
+		}
+	}
+	for _, n := range []string{HostSessionCookieName, HostCSRFCookieName} {
+		c := cookieByName(tls, n)
+		if c == nil || !c.Secure || c.Path != "/" || c.Domain != "" {
+			t.Fatalf("%s must be Secure, Path=/, no Domain: %+v", n, c)
+		}
+	}
+	plain := loginRec(t, srv, nil)
+	for _, n := range []string{HostSessionCookieName, HostCSRFCookieName} {
+		if c := cookieByName(plain, n); c != nil {
+			t.Fatalf("plain login set %s, which a browser would refuse", n)
+		}
+	}
+	// The __Host- cookie authenticates over TLS; the unprefixed one (what
+	// an app on a sibling name could toss) does not, and the reverse holds
+	// over plain HTTP.
+	token := cookieByName(tls, HostSessionCookieName).Value
+	get := func(name string, https bool) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admins/lockout", nil)
+		req.AddCookie(&http.Cookie{Name: name, Value: token})
+		if https {
+			req.Header.Set("X-Forwarded-Proto", "https")
+		}
+		out := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(out, req)
+		return out.Code
+	}
+	if c := get(HostSessionCookieName, true); c != http.StatusOK {
+		t.Fatalf("__Host- cookie over TLS = %d", c)
+	}
+	if c := get(SessionCookieName, true); c != http.StatusUnauthorized {
+		t.Fatalf("unprefixed cookie over TLS = %d, want 401", c)
+	}
+	if c := get(HostSessionCookieName, false); c != http.StatusUnauthorized {
+		t.Fatalf("__Host- cookie over plain HTTP = %d, want 401", c)
+	}
+}
+
+func TestLogoutClearsBothCookieNamesOverTLS(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	clearSessionCookies(rec, req)
+	for _, n := range []string{HostSessionCookieName, HostCSRFCookieName, SessionCookieName, CSRFCookieName} {
+		if c := cookieByName(rec, n); c == nil || c.MaxAge >= 0 {
+			t.Fatalf("%s not expired: %+v", n, c)
+		}
+	}
+}

@@ -51,8 +51,8 @@ func containerName(packageName, service string) string {
 // declaration, the package name for container resolution, the source
 // root the relative database path hangs under, the run directory
 // receiving output, the container for server engines and hooks, and
-// the database password for Postgres (per call from secrets, never
-// stored here).
+// the database password for a server engine (per call from secrets,
+// never stored here).
 type ExportRequest struct {
 	Manifest  catalog.Manifest
 	Package   string
@@ -202,6 +202,21 @@ func vacuumInto(srcPath, dstPath string) error {
 	return nil
 }
 
+// writeDump stores one plain-SQL dump at dstPath, encrypting it when
+// recipients are given. Dumps are 0600: they carry the whole database.
+func writeDump(dstPath, dump string, recipients []age.Recipient) error {
+	if len(recipients) > 0 {
+		if err := encryptBytes(dstPath, []byte(dump), recipients); err != nil {
+			return fmt.Errorf("backup: write dump: %w", err)
+		}
+		return nil
+	}
+	if err := os.WriteFile(dstPath, []byte(dump), 0o600); err != nil {
+		return fmt.Errorf("backup: write dump: %w", err)
+	}
+	return nil
+}
+
 // exportPostgres dumps through the database container's own pg_dump
 // as plain SQL: inspectable, restorable with psql, no custom-format
 // tooling to match later. The password goes to the container on stdin
@@ -216,16 +231,44 @@ func exportPostgres(ctx context.Context, container, user, database, password, ds
 	if err != nil {
 		return fmt.Errorf("backup: pg_dump: %w", err)
 	}
-	if len(recipients) > 0 {
-		if err := encryptBytes(dstPath, []byte(dump), recipients); err != nil {
-			return fmt.Errorf("backup: write dump: %w", err)
-		}
-		return nil
+	return writeDump(dstPath, dump, recipients)
+}
+
+// exportMySQL dumps a MariaDB or MySQL database with that engine's own
+// dump client. --single-transaction takes one consistent snapshot of
+// transactional (InnoDB) tables without blocking writers; --quick
+// streams rows instead of buffering the whole database; --skip-lock-tables
+// (which single-transaction already implies) keeps read locks off
+// non-transactional tables too; --no-tablespaces avoids requiring the
+// PROCESS privilege that MySQL 8 otherwise asks for. The password
+// goes to the container on stdin and is exported as MYSQL_PWD inside
+// the same shell for the single client invocation: never argv, the
+// host environment, disk, or errors. The client connects over
+// 127.0.0.1 so the server checks the password instead of trusting a
+// socket login.
+func exportMySQL(ctx context.Context, container, user, database, password, client string, engineArgs []string, dstPath string, recipients ...age.Recipient) error {
+	const script = `IFS= read -r MYSQL_PWD; export MYSQL_PWD; client="$1"; user="$2"; shift 2; exec "$client" --host=127.0.0.1 --user="$user" --single-transaction --quick --skip-lock-tables --no-tablespaces "$@"`
+	args := append([]string{"sh", "-c", script, "sh", client, user}, engineArgs...)
+	args = append(args, database)
+	dump, err := execContainer(ctx, container, password+"\n", args...)
+	if err != nil {
+		return fmt.Errorf("backup: %s: %w", client, err)
 	}
-	if err := os.WriteFile(dstPath, []byte(dump), 0o600); err != nil {
-		return fmt.Errorf("backup: write dump: %w", err)
+	return writeDump(dstPath, dump, recipients)
+}
+
+// serverDump names the dump client and the engine-specific flags for a
+// server database kind. MariaDB and MySQL share the consistency flags
+// inside exportMySQL; MySQL needs its own GTID handling.
+func serverDump(kind catalog.DatabaseKind) (string, []string, error) {
+	switch kind {
+	case catalog.DatabaseMariaDB:
+		return "mariadb-dump", nil, nil
+	case catalog.DatabaseMySQL:
+		return "mysqldump", []string{"--set-gtid-purged=OFF"}, nil
+	default:
+		return "", nil, fmt.Errorf("backup: unknown database kind %q", kind)
 	}
-	return nil
 }
 
 // ExportDatabase runs one application-aware export: pre hooks, engine
@@ -252,12 +295,21 @@ func ExportDatabase(ctx context.Context, req ExportRequest) (string, error) {
 			outPath += FileSuffix
 		}
 		exportErr = exportSQLiteTo(filepath.Join(req.SrcRoot, req.Database.Path), outPath, req.Recipients)
-	case catalog.DatabasePostgres:
+	case catalog.DatabasePostgres, catalog.DatabaseMariaDB, catalog.DatabaseMySQL:
 		outPath = filepath.Join(destDir, req.Database.Database+".sql")
 		if len(req.Recipients) > 0 {
 			outPath += FileSuffix
 		}
-		exportErr = exportPostgres(ctx, req.Container, req.Database.Username, req.Database.Database, req.Password, outPath, req.Recipients...)
+		if req.Database.Kind == catalog.DatabasePostgres {
+			exportErr = exportPostgres(ctx, req.Container, req.Database.Username, req.Database.Database, req.Password, outPath, req.Recipients...)
+			break
+		}
+		client, engineArgs, err := serverDump(req.Database.Kind)
+		if err != nil {
+			exportErr = err
+			break
+		}
+		exportErr = exportMySQL(ctx, req.Container, req.Database.Username, req.Database.Database, req.Password, client, engineArgs, outPath, req.Recipients...)
 	default:
 		exportErr = fmt.Errorf("backup: unknown database kind %q", req.Database.Kind)
 	}

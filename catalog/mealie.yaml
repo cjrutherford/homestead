@@ -1,0 +1,123 @@
+# Mealie recipe manager (S350): the sixth Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# One GHCR container with SQLite on application storage. Mealie seeds a
+# default administrator (changeme@example.com / MyPassword) on first
+# start; the first-run routine (firstrun below, S448) replaces that
+# password and identity at install with a generated one the owner can
+# reveal, so the well-known login never survives the first start. The
+# owner then creates household accounts; signups stay closed.
+# The only declared secret is the Authentik client secret (S403); the
+# image's own entrypoint runs unchanged, Mealie reads the secret from a
+# file (OIDC_CLIENT_SECRET_FILE).
+single_origin_sign_in: true  # ADR-060: published, the LAN names redirect to the public name
+name: mealie
+publish: host  # ADR-061
+publish_reason: single_origin
+version: 3.29.0
+title: Mealie
+blurb: Recipes, meal plans, and one shopping list.
+description: Mealie keeps family recipes with photos and steps, builds a
+  weekly meal plan, and turns it into a shopping list you can share. It
+  imports recipes from a URL, scales ingredients, and stores everything in
+  one SQLite database on application storage.
+category: recipes
+icon: mdi:silverware-fork-knife
+services:
+- name: mealie
+  image: ghcr.io/mealie-recipes/mealie:v3.29.0
+  publisher: upstream
+  exposes: web
+  containerport: 9000
+  environment:
+    # Links in the app and its exports use the routed HTTPS host; the
+    # variable is dropped when no route is assigned.
+    BASE_URL: "{{app_url}}"
+    DB_ENGINE: sqlite
+    # Household members are created from the admin UI or sign in with
+    # Authentik, so public signup stays off.
+    ALLOW_SIGNUP: "false"
+  # Image VOLUME: /app/data (SQLite database, generated secrets,
+  # uploaded recipe images, and app-created backups). run.sh starts as
+  # root, chowns /app to PUID 911 and re-execs as that user before it
+  # reads the *_FILE secrets, so the volume and the sign-in secret file
+  # are owned by 911:911.
+  data:
+  - target: /app/data
+    class: application
+    subpath: data
+    uid: 911
+    gid: 911
+requirements:
+  memorymb: 512
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  # Mealie listens on 9000; routes proxy to it and no host port is
+  # published by default.
+exposure:
+  package: mealie
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Recipes, meal plans, and shopping lists leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+  # App sign-in through Authentik (S403): Mealie's built-in OIDC, set by
+  # environment alone. Authentik groups gate access (signup is on only
+  # for people Authentik lets in); the local administrator Homestead set
+  # up keeps working because there is no auto-redirect.
+  oidc:
+    adapter: env-oidc
+    service: mealie
+    env:
+      redirectpaths: ["/login", "/login?direct=1"]
+      signinpath: /login
+      secret: oidc_client_secret
+      trust: OIDC_TLS_CACERTFILE
+      warnings:
+      - Authentik sends email_verified=false, so Mealie's email-verification check is turned off for sign-in; Mealie links a person to an existing Mealie user with the same email, so keep the emails of your Authentik people accurate.
+      set:
+        OIDC_AUTH_ENABLED: "true"
+        OIDC_CONFIGURATION_URL: "{{issuer}}.well-known/openid-configuration"
+        OIDC_CLIENT_ID: "{{client_id}}"
+        OIDC_PROVIDER_NAME: Authentik
+        OIDC_SIGNUP_ENABLED: "true"
+        # Authentik 2026.8 sends email_verified=false for every user, and
+        # Mealie refuses sign-in without a true claim by default (S448,
+        # found live). The owner's Authentik is the only identity source.
+        OIDC_REQUIRES_EMAIL_VERIFICATION: "false"
+        OIDC_AUTO_REDIRECT: "false"
+        OIDC_REMEMBER_ME: "true"
+        OIDC_GROUPS_CLAIM: groups
+        OIDC_ADMIN_GROUP: "{{admin_group}}"
+        OIDC_USER_GROUP: "{{user_group}}"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Mealie; Homestead generates it, hands it
+  # to Authentik, and gives Mealie the file.
+  consumers:
+  - service: mealie
+    env: OIDC_CLIENT_SECRET_FILE
+- name: admin_password
+  # The seeded administrator's password, set at install in place of the
+  # well-known one. Only applied while that account still has the seeded
+  # password; an administrator you changed is never touched.
+  immutable: true
+  reveal: true
+  note: Password for homestead-admin@homestead.lan, the local administrator Homestead set up at install. Sign in with Authentik for everyday use.
+firstrun:
+  routine: mealie
+  service: mealie
+  account: changeme@example.com
+  secret: admin_password
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page; the local administrator Homestead set up stays available.

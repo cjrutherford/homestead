@@ -11,6 +11,39 @@
     <app-state-message kind="error" [headline]="error()" />
   }
 
+  @if (bundles().length > 0) {
+    <section class="field-panel" aria-label="Catalog bundles">
+      <h2>Bundles</h2>
+      <p>Combined memory and storage for each curated set, graded against this appliance.</p>
+      <ul>
+        @for (bundle of bundles(); track bundle.Bundle) {
+          <li>
+            <strong>{{ bundle.Title }}</strong> — {{ bundle.Blurb }}
+            <p>{{ bundle.Detail }}</p>
+            <ul>
+              @for (member of bundle.Members ?? []; track member.Name) {
+                <li>{{ member.Name }}{{ member.Available ? '' : ' (not in the catalog yet)' }}</li>
+              }
+              @for (storage of bundle.Storage ?? []; track storage.Class) {
+                <li>
+                  {{ storage.Class }} storage:
+                  @if (storage.Known) {
+                    {{ storage.Needed }} bytes needed, {{ storage.Free }} free
+                  } @else {
+                    {{ storage.Needed }} bytes needed; no assignment for this class
+                  }
+                </li>
+              }
+            </ul>
+            @if ((bundle.Missing ?? []).length > 0) {
+              <p>Not in the catalog yet: {{ bundle.Missing.join(', ') }}</p>
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
   <app-loading [loading]="busy() && packages().length === 0" shape="list">
     @if (!(busy() && packages().length === 0)) {
       <section class="field-panel" aria-label="Catalog apps">
@@ -87,7 +120,27 @@
                       </p>
                     }
 
+                    @if (manifest.Works?.length) {
+                      <h3>Works with</h3>
+                      @for (group of worksByLevel(manifest.Works); track group.level) {
+                        <h4>{{ group.level }}</h4>
+                        <ul>
+                          @for (work of group.works; track work.Kind + work.Target) {
+                            <li>
+                              {{ work.Kind }}:
+                              <button type="button" class="quiet" (click)="select(work.Target)">
+                                {{ work.Title || work.Target }}
+                              </button>
+                              — {{ work.Note }}
+                            </li>
+                          }
+                        </ul>
+                      }
+                    }
+
                     <app-app-move [name]="manifest.Name" [title]="manifest.Title" (moved)="onMoved(manifest.Name)" />
+
+                    <app-read-links [name]="manifest.Name" [title]="manifest.Title" />
 
                     @if (manifest.Name !== 'authentik') {
                       <h3>Public address</h3>

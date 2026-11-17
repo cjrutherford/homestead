@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Prepare a pinned Everything app source tree for a bridge build (ADR-057).
+
+Generic over apps: everything app-specific lives in scripts/everything/apps/
+<app>.json (archive digest, source subtree, SDK tag, patches, service-worker
+template, SDK surface). Adding an app adds a JSON file and a pinned archive;
+this script does not change. Nothing is fetched, and nothing from the archive
+is executed. Every patch target must occur exactly once or preparation fails
+with no output.
+"""
+import argparse
+import hashlib
+import io
+import json
+from pathlib import Path, PurePosixPath
+import tarfile
+
+HERE = Path(__file__).resolve().parent
+MAX_FILE = 16 * 1024 * 1024
+MAX_TOTAL = 64 * 1024 * 1024
+APP_RE = __import__('re').compile(r'^[a-z][a-z0-9-]*$')
+
+
+def load_definition(app: str) -> dict:
+    if not APP_RE.match(app):
+        raise ValueError('invalid app name')
+    path = HERE / 'apps' / (app + '.json')
+    d = json.loads(path.read_text())
+    if d.get('app') != app:
+        raise ValueError('app definition does not name ' + app)
+    for key in ('archive', 'sha256', 'subtree', 'index', 'sdk_tag', 'patches', 'required', 'service_worker', 'sdk_surface'):
+        if key not in d:
+            raise ValueError('app definition lacks ' + key)
+    return d
+
+
+WORDING = json.loads((HERE / 'wording.json').read_text())
+
+
+def reword(name: str, content: bytes) -> bytes:
+    """Apply the shared Puter-wording rules (wording.json, S467) to an app source file."""
+    path = '/' + name
+    if not name.endswith(tuple(WORDING['extensions'])) or any(s in path for s in WORDING['skip']):
+        return content
+    for old, new in WORDING['rules']:
+        content = content.replace(old.encode(), new.encode())
+    return content
+
+
+def prepare_app(definition: dict, archive_path: Path, bridge_path: Path, output: Path, expected_sha256: str = '') -> None:
+    d = definition
+    sub = d['subtree'].rstrip('/') + '/'
+    extra = set(d.get('extra_files', []))
+    # "sdk_tag": null (3D, S377): upstream never loads the hosted SDK from its
+    # page, so the local shim tag is added in front of "sdk_inject_before"
+    # (which must occur exactly once). Otherwise the hosted tag is replaced.
+    sdk_tag = (d['sdk_tag'] or d['sdk_inject_before']).encode()
+    local_tag = b'<script src="./_homestead/puter-bridge.js" defer></script>'
+    data = archive_path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != (expected_sha256 or d['sha256']):
+        raise ValueError('source archive digest mismatch')
+    bridge = bridge_path.read_bytes()
+    if not bridge or len(bridge) > MAX_FILE:
+        raise ValueError('bridge is empty or too large')
+    if output.exists():
+        raise ValueError('output already exists')
+    # "service_worker": null (Records, S370): upstream ships and registers no
+    # worker, so none is added; the app is online-only after first load.
+    sw = d['service_worker']
+    worker = (HERE / sw['template']).read_bytes() if sw else b''
+    # mode "build" (Tasks): the upstream build fills in __VERSION__ and
+    # __ASSETS__. mode "runtime" (Projects): upstream has no such step, so the
+    # worker only has __VERSION__, filled in here from the pinned digest, and
+    # caches content-hashed assets as they are fetched.
+    mode = sw.get('mode', 'build') if sw else 'none'
+    if sw and (mode not in ('build', 'runtime') or b'__VERSION__' not in worker or (b'__ASSETS__' in worker) != (mode == 'build')):
+        raise ValueError('invalid local service worker template')
+    if mode == 'runtime':
+        worker = worker.replace(b'__VERSION__', (expected_sha256 or d['sha256'])[:12].encode())
+    added_files = []
+    for a in d.get('add_files', []):
+        t = PurePosixPath(a['target'])
+        if t.is_absolute() or '..' in t.parts or not t.as_posix().startswith(sub) or '/' in a['source'] or '\\' in a['source']:
+            raise ValueError('unsafe added file: ' + a['target'])
+        added_files.append({'target': a['target'], 'body': (HERE / 'files' / a['source']).read_bytes()})
+    patches = {}
+    for p in d['patches']:
+        patches.setdefault(p['file'], []).append((p['old'].encode(), p['new'].encode()))
+    with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
+        members = archive.getmembers()
+        names = set()
+        total = 0
+        for member in members:
+            name = PurePosixPath(member.name)
+            if (not member.isfile() or name.is_absolute() or '..' in name.parts or
+                    '\\' in member.name or name.as_posix() != member.name or
+                    member.name in names or member.size > MAX_FILE or
+                    not (member.name in extra or member.name.startswith(sub))):
+                raise ValueError('unsafe or unexpected source member: ' + member.name)
+            names.add(member.name)
+            total += member.size
+        if total > MAX_TOTAL:
+            raise ValueError('source archive too large')
+        if {a['target'] for a in added_files} & names:
+            raise ValueError('added file would overwrite a source file')
+        if not set(d['required']).issubset(names):
+            raise ValueError('source archive missing required files')
+        index = archive.extractfile(d['index']).read()
+        if index.count(sdk_tag) != 1:
+            raise ValueError('expected exactly one upstream SDK tag')
+        for patched, edits in patches.items():
+            if patched not in names:
+                raise ValueError('UI patch target changed in ' + patched)
+            body = archive.extractfile(patched).read()
+            for old, _new in edits:
+                if body.count(old) != 1:
+                    raise ValueError('UI patch target changed in ' + patched)
+        output.mkdir(parents=True)
+        for member in members:
+            destination = output.joinpath(*PurePosixPath(member.name).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            content = archive.extractfile(member).read()
+            if member.name == d['index']:
+                content = content.replace(sdk_tag, local_tag + (b'\n    ' + sdk_tag if not d['sdk_tag'] else b''))
+            if sw and member.name == sw['target']:
+                content = worker
+            for old, new in patches.get(member.name, []):
+                content = content.replace(old, new)
+            content = reword(member.name, content)
+            destination.write_bytes(content)
+        # "add_files" (3D, S377): small Homestead-owned source files added to
+        # the tree (a storage layer the patches wire in). The source lives in
+        # scripts/everything/files/; it may not overwrite an upstream file.
+        for added in added_files:
+            destination = output.joinpath(*PurePosixPath(added['target']).parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(added['body'])
+        target = output / sub / 'public/_homestead/puter-bridge.js'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(bridge)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('app')
+    parser.add_argument('archive', type=Path)
+    parser.add_argument('bridge', type=Path)
+    parser.add_argument('output', type=Path)
+    parser.add_argument('--print-subtree', action='store_true', help='print the app source subtree and exit')
+    args = parser.parse_args()
+    d = load_definition(args.app)
+    if args.print_subtree:
+        print(d['subtree'])
+        return
+    prepare_app(d, args.archive, args.bridge, args.output)
+
+
+if __name__ == '__main__':
+    main()

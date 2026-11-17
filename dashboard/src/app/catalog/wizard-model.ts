@@ -116,7 +116,9 @@ export function endpointsOf(manifest: CatalogManifest): { endpoint: string; serv
 }
 
 /** The container port the planner needs for a routed service. */
-export function defaultContainerPort(manifest: CatalogManifest): string {
+export function defaultContainerPort(manifest: CatalogManifest, serviceName?: string): string {
+  const service = manifest.Services.find((item) => item.Name === serviceName);
+  if (service?.ContainerPort) return String(service.ContainerPort);
   const declared = manifest.Requirements.Ports ?? [];
   if (declared.length > 0) {
     return String(declared[0]);

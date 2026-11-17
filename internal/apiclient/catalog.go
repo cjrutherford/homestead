@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 
+	"homestead/internal/appsso"
 	"homestead/internal/docker"
 )
 
@@ -19,11 +22,22 @@ type CatalogPackage struct {
 	Icon     string `json:"icon"`
 }
 
+// CatalogIntegration is one resolved package relationship (S341): the
+// declaration plus its derived level and the target's title.
+type CatalogIntegration struct {
+	Kind   string `json:"Kind"`
+	Level  string `json:"Level"`
+	Target string `json:"Target"`
+	Title  string `json:"Title"`
+	Note   string `json:"Note"`
+}
+
 // CatalogService is one manifest service as served.
 type CatalogService struct {
-	Name    string `json:"Name"`
-	Image   string `json:"Image"`
-	Exposes string `json:"Exposes"`
+	Name          string `json:"Name"`
+	Image         string `json:"Image"`
+	Exposes       string `json:"Exposes"`
+	ContainerPort int    `json:"ContainerPort"`
 }
 
 // CatalogManifest is the curated manifest detail the CLI reviews.
@@ -42,6 +56,8 @@ type CatalogManifest struct {
 	BackupPaths []string `json:"BackupPaths"`
 	// Browser lists advisory client capabilities (S252).
 	Browser []BrowserAdvisory `json:"Browser"`
+	// Works lists declared integrations resolved by the daemon (S341).
+	Works []CatalogIntegration `json:"Works"`
 }
 
 // BrowserAdvisory is one non-blocking browser capability warning with its
@@ -103,6 +119,30 @@ type InstallPlanReport struct {
 	// FilesLink is the Nextcloud link for craft files the install's
 	// setup makes (S326); install with setup.files_link to approve it.
 	FilesLink *InstallFilesLink `json:"files_link,omitempty"`
+	SignIn    *InstallSignIn    `json:"sign_in,omitempty"`
+	Access    *InstallAccess    `json:"access,omitempty"`
+}
+
+type InstallAccessPerson struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+	Username    string `json:"username"`
+	State       string `json:"state"`
+}
+type InstallAccess struct {
+	Mode           string                `json:"mode"`
+	People         []InstallAccessPerson `json:"people"`
+	AdminSupported bool                  `json:"admin_supported"`
+	Reason         string                `json:"reason,omitempty"`
+	Notice         string                `json:"notice,omitempty"`
+}
+
+// InstallSignIn is the install-time Authentik offer and reviewed plan.
+type InstallSignIn struct {
+	Offered   bool         `json:"offered"`
+	Reason    string       `json:"reason,omitempty"`
+	TokenKept bool         `json:"token_kept"`
+	Plan      *appsso.Plan `json:"plan,omitempty"`
 }
 
 // InstallFilesLink is the nextcloud-link setup step an install brings:
@@ -121,6 +161,46 @@ type InstallFilesLink struct {
 // OperationStarted carries the started operation id.
 type OperationStarted struct {
 	ID int64 `json:"id"`
+}
+
+// BundleMember is one curated bundle member's availability (S344).
+type BundleMember struct {
+	Name      string `json:"Name"`
+	Available bool   `json:"Available"`
+	MemoryMB  uint64 `json:"MemoryMB"`
+}
+
+// BundleStorage is one storage class's combined demand (S344).
+type BundleStorage struct {
+	Class  string `json:"Class"`
+	Needed uint64 `json:"Needed"`
+	Free   uint64 `json:"Free"`
+	Known  bool   `json:"Known"`
+	OK     bool   `json:"OK"`
+}
+
+// BundleReport grades one curated bundle against the appliance (S344).
+type BundleReport struct {
+	Bundle      string          `json:"Bundle"`
+	Title       string          `json:"Title"`
+	Blurb       string          `json:"Blurb"`
+	Members     []BundleMember  `json:"Members"`
+	Missing     []string        `json:"Missing"`
+	Complete    bool            `json:"Complete"`
+	TotalMemory uint64          `json:"TotalMemory"`
+	HostMemory  uint64          `json:"HostMemory"`
+	Storage     []BundleStorage `json:"Storage"`
+	Passed      bool            `json:"Passed"`
+	Detail      string          `json:"Detail"`
+}
+
+// CatalogBundles grades the curated profiles against the appliance.
+func (c *Client) CatalogBundles(ctx context.Context) ([]BundleReport, error) {
+	var out []BundleReport
+	if err := c.get(ctx, "/api/v1/catalog/bundles", &out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // CatalogPackages lists curated packages.
@@ -161,6 +241,44 @@ func (c *Client) PlanInstall(ctx context.Context, name string, body map[string]a
 		return InstallPlanReport{}, err
 	}
 	return out, nil
+}
+
+func (c *Client) PlanInstallAccess(ctx context.Context, name string, body map[string]any) (string, error) {
+	var out struct {
+		Digest string `json:"digest"`
+	}
+	if err := c.postJSON(ctx, "/api/v1/catalog/"+name+"/access-plan", body, &out); err != nil {
+		return "", err
+	}
+	return out.Digest, nil
+}
+
+func (c *Client) InstallPackageWithAdmins(ctx context.Context, name string, body map[string]any, password string) (int64, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return 0, err
+	}
+	req, err := c.post(ctx, "/api/v1/catalog/"+name+"/install-admin", raw)
+	if err != nil {
+		return 0, err
+	}
+	if password != "" {
+		u, err := url.Parse(c.BaseURL())
+		if err != nil {
+			return 0, fmt.Errorf("cannot verify local reauthentication address")
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return 0, fmt.Errorf("local password reauthentication requires a loopback daemon address")
+		}
+		req.Header.Set(ReauthHeader, password)
+	}
+	var out OperationStarted
+	if err := c.roundTrip(req, http.StatusOK, &out); err != nil {
+		return 0, err
+	}
+	return out.ID, nil
 }
 
 // InstallPackage executes an approved install body, returning the

@@ -2,7 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 
 	"homestead/internal/router"
 	"homestead/internal/secret"
@@ -32,6 +37,10 @@ func certificateCoverage(ctx context.Context, client *router.TunnelClient, token
 	if err != nil {
 		return nil, nil, err
 	}
+	return coverageFromCertificates(certs, zone, names)
+}
+
+func coverageFromCertificates(certs router.ZoneCertificates, zone router.Zone, names []string) ([]publicNameCoverage, []string, error) {
 	coverage := []publicNameCoverage{}
 	warnings := []string{}
 	if certs.Unreadable {
@@ -81,4 +90,88 @@ func statusCoverage(ctx context.Context, secrets *secret.Store, names []string) 
 		out = append(out, publicNameCoverage{Hostname: name, Covered: got.Covered, By: got.By, Checked: !certs.Unreadable})
 	}
 	return out
+}
+
+// publicationCertificateState binds only active packs covering this name: their
+// IDs, normalized matching hosts, and certificate IDs and statuses, plus
+// the zone's Total TLS setting. Host duplicates, order, unrelated hosts and
+// timestamps do not affect it.
+func publicationCertificateState(certs router.ZoneCertificates, name string) (string, error) {
+	// An unreadable state (S397) is bound as a stable marker rather than
+	// refused: the plan stays valid while it stays unreadable and goes
+	// stale if readability or the readable packs change.
+	readability := ""
+	switch {
+	case certs.Unreadable:
+		readability = "unreadable"
+	case certs.TotalTLSUnreadable:
+		readability = "unreadable-total-tls"
+	}
+	type packState struct {
+		ID           string                   `json:"id"`
+		Hosts        []string                 `json:"hosts"`
+		Certificates []router.PackCertificate `json:"certificates"`
+	}
+	packs := []packState{}
+	for _, pack := range certs.Packs {
+		hosts := map[string]bool{}
+		for _, host := range pack.Hosts {
+			if router.HostCovers(host, name) {
+				hosts[router.NormalizeName(host)] = true
+			}
+		}
+		if len(hosts) == 0 {
+			continue
+		}
+		if pack.ID == "" {
+			return "", fmt.Errorf("cannot review publication: a relevant certificate pack has no identity")
+		}
+		p := packState{ID: pack.ID, Hosts: []string{}, Certificates: append([]router.PackCertificate{}, pack.Certificates...)}
+		sort.Slice(p.Certificates, func(i, j int) bool {
+			if p.Certificates[i].ID != p.Certificates[j].ID {
+				return p.Certificates[i].ID < p.Certificates[j].ID
+			}
+			return p.Certificates[i].Status < p.Certificates[j].Status
+		})
+		for host := range hosts {
+			p.Hosts = append(p.Hosts, host)
+		}
+		sort.Strings(p.Hosts)
+		packs = append(packs, p)
+	}
+	sort.Slice(packs, func(i, j int) bool {
+		if packs[i].ID != packs[j].ID {
+			return packs[i].ID < packs[j].ID
+		}
+		return fmt.Sprint(packs[i].Hosts) < fmt.Sprint(packs[j].Hosts)
+	})
+	data, err := json.Marshal(struct {
+		Version    int         `json:"version"`
+		TotalTLS   bool        `json:"total_tls"`
+		Unreadable string      `json:"unreadable,omitempty"`
+		Packs      []packState `json:"packs"`
+	}{1, certs.TotalTLS, readability, packs})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func publicationCoverage(ctx context.Context, client *router.TunnelClient, token string, zone router.Zone, name string) ([]publicNameCoverage, []string, string, error) {
+	certs, err := client.ZoneCertificates(ctx, token, zone)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	fingerprint, err := publicationCertificateState(certs, name)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	coverage, warnings, err := coverageFromCertificates(certs, zone, []string{name})
+	if certs.Unreadable || certs.TotalTLSUnreadable {
+		warnings = append(warnings, fmt.Sprintf("Homestead cannot read this zone's certificates with the stored Cloudflare token, so it cannot confirm %s is covered. "+
+			"Cloudflare's Universal SSL covers first-level names such as %s unless it was disabled. "+
+			"Add Zone → SSL and Certificates → Read to the token to check.", router.NormalizeName(name), router.NormalizeName(name)))
+	}
+	return coverage, warnings, fingerprint, err
 }

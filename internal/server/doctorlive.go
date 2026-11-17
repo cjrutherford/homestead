@@ -72,8 +72,13 @@ func doctorLiveProbes(c DoctorLiveConfig) func() []doctor.Probe {
 			{Name: "tunnel-connector", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return probeTunnelConnector(ctx, c) }},
 			{Name: "tunnel-exists", Group: doctor.GroupTunnel, Timeout: 8 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelExists(ctx, c) }},
 			{Name: "tunnel-dns", Group: doctor.GroupTunnel, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeTunnelDNS(ctx, c) }},
+			{Name: "never-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return neverPublishChecks(c) }},
+			{Name: "subpath-publish", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return subpathPublishChecks(c) }},
+			{Name: "public-name-plan", Group: doctor.GroupTunnel, Run: func(ctx context.Context) []doctor.Check { return publicNamePlanChecks(c) }},
 			{Name: "edge-certificate", Group: doctor.GroupCertificates, Timeout: 10 * time.Second, Run: func(ctx context.Context) []doctor.Check { return probeEdgeCertificates(ctx, c) }},
 			{Name: "authentik", Group: doctor.GroupSignIn, Run: func(ctx context.Context) []doctor.Check { return probeAuthentik(ctx, c) }},
+			{Name: "authentik-outpost", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gatedAppChecks(ctx, c) }},
+			{Name: "gated-app-host-block", Group: doctor.GroupSignIn, Timeout: 12 * time.Second, Run: func(ctx context.Context) []doctor.Check { return gateBlockChecks(ctx, c) }},
 		}
 		entries, err := catalog.Load(c.CatalogDir)
 		if err != nil {
@@ -320,6 +325,135 @@ func firstCNAME(records []router.DNSRecord) *router.DNSRecord {
 	return nil
 }
 
+// neverPublishChecks warns when an app whose manifest says publish: never
+// holds a public name (S451): drift from the rule, with the removal as the
+// fix. Local state only.
+func neverPublishChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "never-publish"
+	entries, err := catalog.Load(c.CatalogDir)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the catalog could not be read")}
+	}
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	var out []doctor.Check
+	for _, n := range entries.Names() {
+		m, err := entries.Get(n)
+		if err != nil || m.PublishForm() != catalog.PublishNever {
+			continue
+		}
+		for _, r := range appsso.AppRoutes(m, set.Routes) {
+			if r.IsPath() && r.Published {
+				out = append(out, doctor.Check{Name: name + ":" + string(r.Host), Status: doctor.StatusFail,
+					Detail: m.Title + " is published at " + r.Path + " on the dashboard's public name but its manifest says it is never published",
+					Fix:    liveFix("Take it off the public name on the app's page (Public address, Remove), or run the command.", "/admin/catalog", "homesteadctl apps public plan "+m.Name+" --off")})
+			}
+			for _, host := range r.Tunnel {
+				out = append(out, doctor.Check{Name: name + ":" + string(host), Status: doctor.StatusFail,
+					Detail: m.Title + " is published at " + string(host) + " but its manifest says it is never published",
+					Fix:    liveFix("Remove the public name on the app's page (Public address, Remove), or run the command.", "/admin/catalog", "homesteadctl apps public plan "+m.Name+" --off")})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no never-publish app has a public name"}}
+	}
+	return out
+}
+
+// subpathPublishChecks reports ADR-061's public-form drift (S471): an
+// installed app whose package is served by path but still holds a public
+// name of its own ("move available", a warning with the move as the fix),
+// and an app published at its path on a dashboard that has no public name.
+// Local state only.
+func subpathPublishChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "subpath-publish"
+	entries, err := catalog.Load(c.CatalogDir)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the catalog could not be read")}
+	}
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	server := docker.PublicServerName(set.Routes)
+	var out []doctor.Check
+	for _, n := range entries.Names() {
+		m, err := entries.Get(n)
+		if err != nil || m.PublishForm() != catalog.PublishPath || m.Name == authentikPackage {
+			continue
+		}
+		for _, r := range appsso.AppRoutes(m, set.Routes) {
+			if !r.IsPath() {
+				for _, host := range r.Tunnel {
+					out = append(out, doctor.Check{Name: name + ":" + m.Name, Status: doctor.StatusWarn,
+						Detail: m.Title + " is published at its own name " + string(host) + ", but its package is served at " + m.AppPath() + " under the dashboard's public name: move available",
+						Fix: liveFix("Review the move on the app's page: it publishes the path and removes the old name, and old links to the old name stop working.", "/admin/catalog",
+							"homesteadctl apps move plan "+m.Name)})
+				}
+			} else if r.Published && server == "" {
+				out = append(out, doctor.Check{Name: name + ":" + m.Name, Status: doctor.StatusWarn,
+					Detail: m.Title + " is published at " + r.Path + " but the dashboard has no public name for it to answer on",
+					Fix:    liveFix("Publish the dashboard on the Tunnel page.", "/admin/tunnel", "homesteadctl tunnel status")})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "no app is on a public name its package no longer uses"}}
+	}
+	return out
+}
+
+// publicNamePlanChecks flags a public name Homestead holds (a tunnel
+// connector entry or a DNS record it created) that no approved plan
+// carries: no edge route lists it. That is what a move leaves when it stops
+// before the old name's removal (S479), or what a hand edit leaves. Local
+// state only.
+func publicNamePlanChecks(c DoctorLiveConfig) []doctor.Check {
+	const name = "public-name-plan"
+	set, err := loadEdgeRoutes(c.Store)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the edge routes could not be read: "+err.Error())}
+	}
+	left, err := leftoverPublicNames(c.Store, set.Routes)
+	if err != nil {
+		return []doctor.Check{unknownCheck(name, "the tunnel names could not be read: "+err.Error())}
+	}
+	if len(left) == 0 {
+		return []doctor.Check{{Name: name, Status: doctor.StatusOK, Detail: "every public name has an approved plan behind it"}}
+	}
+	pending, _ := listMovePending(c.Store)
+	var out []doctor.Check
+	for _, l := range left {
+		held := "a tunnel entry"
+		switch {
+		case l.Connector && l.DNS:
+			held = "a tunnel entry and a DNS record"
+		case l.DNS:
+			held = "a DNS record"
+		}
+		check := doctor.Check{Name: name + ":" + l.Host, Status: doctor.StatusWarn,
+			Detail: l.Host + " has " + held + " but no approved plan carries it"}
+		app := ""
+		for _, p := range pending {
+			if strings.EqualFold(p.Host, l.Host) {
+				app = p.App
+			}
+		}
+		if app != "" {
+			check.Detail += ": a move of " + app + " stopped before its old name was removed"
+			check.Fix = liveFix("Review and approve finishing the move; it checks the new address first, then removes the old name.", "/admin/catalog",
+				"homesteadctl apps move plan "+app)
+		} else {
+			check.Fix = liveFix("Plan the tunnel again to see what would change; nothing is removed until you approve.", "/admin/tunnel", "homesteadctl tunnel plan")
+		}
+		out = append(out, check)
+	}
+	return out
+}
+
 func probeEdgeCertificates(ctx context.Context, c DoctorLiveConfig) []doctor.Check {
 	const name = "edge-certificate"
 	routes, err := router.ListRoutes(c.Store)
@@ -523,8 +657,8 @@ func probeAppContainers(ctx context.Context, l *lazyContainers, m catalog.Manife
 			raise(doctor.StatusWarn)
 		case found.State == "running":
 			notes = append(notes, svc.Name)
-		case strings.HasPrefix(found.Status, "Exited (0)"):
-			// A one-shot job that finished is not a fault.
+		// Every generated service restarts unless stopped (ADR-021), so
+		// even a clean exit 0 means someone stopped it (S462).
 		default:
 			problems = append(problems, fmt.Sprintf("%s is %s", svc.Name, found.State))
 			raise(doctor.StatusFail)

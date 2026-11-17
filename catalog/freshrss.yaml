@@ -1,0 +1,149 @@
+# FreshRSS feed reader (S348): the fourth Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# The plain tag is the Debian image, which is the variant that ships
+# mod_auth_openidc; the -alpine variant has no OIDC, so it is not used.
+# Homestead installs it with the image's own CLI at install (S445,
+# ADR-059): SQLite database, and the default user (the administrator)
+# named for the owner's Authentik username so sign-in makes the owner the
+# administrator. That user's generated password is sealed and revealable,
+# for the form login that works while sign-in is off. The web installer
+# is never shown.
+#
+# Sign-in with Authentik (S412) is exclusive by the owner's decision
+# (2026-10-31, ADR-052 amendment): with OIDC on, the image puts the whole
+# web UI (/p/i/, login form included) behind Apache's mod_auth_openidc and
+# FreshRSS must use http_auth, so the app's own form login stops working
+# until sign-in is turned off.
+name: freshrss
+publish: host  # ADR-061
+publish_reason: no_subpath  # S477: the image's Apache config hard-codes OIDCRedirectURI /i/oidc/ and mod_auth_openidc ignores X-Forwarded-Prefix
+version: 1.30.4
+title: FreshRSS
+blurb: The feeds you chose, on your own schedule.
+description: FreshRSS collects RSS and Atom feeds into one readable river
+  with folders, favourites, and a search that works on the articles it has
+  already fetched. It keeps its SQLite database on application storage,
+  refreshes in the background, and needs no account with a feed service.
+category: feeds
+icon: mdi:rss
+services:
+- name: freshrss
+  image: docker.io/freshrss/freshrss:1.30.4
+  publisher: upstream
+  exposes: web
+  containerport: 80
+  # The image's ENTRYPOINT is ./Docker/entrypoint.sh and its CMD is the
+  # shell string below (Docker/Dockerfile, 1.30.4). The supervisor execs
+  # exactly this so it can export the OIDC secrets first; "$$" is
+  # Compose's escape for a literal "$".
+  entrypoint:
+  - ./Docker/entrypoint.sh
+  - sh
+  - -c
+  - '([ -z "$$CRON_MIN" ] || cron) && . /etc/apache2/envvars && exec apache2 -D FOREGROUND $$([ -n "$$OIDC_ENABLED" ] && [ "$$OIDC_ENABLED" -ne 0 ] && echo "-D OIDC_ENABLED")'
+  environment:
+    # Refresh feeds every twenty minutes; without CRON_MIN the image
+    # installs no cron job and only manual refreshes fetch articles.
+    CRON_MIN: "*/20"
+    # The Debian image serves Apache on 80 by default; routes proxy to it.
+    LISTEN: 0.0.0.0:80
+  # No image VOLUME. The data directory (SQLite database, user
+  # configuration, cached articles) and the extensions directory are
+  # written by Apache as www-data (uid/gid 33).
+  data:
+  - target: /var/www/FreshRSS/data
+    class: application
+    subpath: data
+    uid: 33
+    gid: 33
+  - target: /var/www/FreshRSS/extensions
+    class: application
+    subpath: extensions
+    uid: 33
+    gid: 33
+requirements:
+  memorymb: 512
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 1073741824
+exposure:
+  package: freshrss
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Feed subscriptions and reading history leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+  # Apache's mod_auth_openidc (S412), configured by environment. The
+  # module reads its client secret and session crypto key from the
+  # environment (no _FILE form), so both go through the secret supervisor.
+  # The callback is /i/oidc/. The edge sends X-Forwarded-Host and
+  # X-Forwarded-Proto on every proxied request, which the module needs to
+  # build the return URL. The username is Authentik's preferred_username.
+  oidc:
+    adapter: env-oidc
+    service: freshrss
+    env:
+      redirectpaths: ["/i/oidc/"]
+      signinpath: /i/
+      secret: oidc_client_secret
+      extrasecrets: [oidc_crypto_key]
+      # mod_auth_openidc has no CA setting in the image: it uses the
+      # system bundle through libcurl/OpenSSL. For the appliance's own
+      # issuer the combined bundle (host CAs + appliance root) is laid
+      # read-only over that file; a public issuer needs nothing.
+      trustbundle: system
+      trustpath: /etc/ssl/certs/ca-certificates.crt
+      # Commands run inside the container, as the web server's user:
+      # on turns on http_auth (new people register automatically, the
+      # default in config.default.php); off restores the login form.
+      execuser: www-data
+      onapply: [php, cli/reconfigure.php, --auth-type, http_auth]
+      onoff: [php, cli/reconfigure.php, --auth-type, form]
+      exclusive: true
+      warnings:
+      - "FreshRSS signs in through Authentik only while this is on. Its own login form stops working: the Authentik person whose username (preferred_username) equals FreshRSS's default user (the administrator Homestead created at install, named for the owner's Authentik username) becomes the administrator, and everyone else gets an ordinary account at first sign-in. Create or rename that person in Authentik before applying, or nobody will administer FreshRSS."
+      - "If Authentik is unreachable, FreshRSS's web interface is unreachable too (the feed API at /api/ keeps its own API passwords). To get back in, turn sign-in off from Homestead; that restores FreshRSS's login form. This is an explicit exception to keeping each app's local login (ADR-052 amendment, S412)."
+      set:
+        OIDC_ENABLED: "1"
+        OIDC_PROVIDER_METADATA_URL: "{{issuer}}.well-known/openid-configuration"
+        OIDC_CLIENT_ID: "{{client_id}}"
+        OIDC_REMOTE_USER_CLAIM: preferred_username
+        OIDC_SCOPES: openid email profile
+        OIDC_X_FORWARDED_HEADERS: X-Forwarded-Host X-Forwarded-Proto
+firstrun:
+  routine: freshrss
+  service: freshrss
+  account: admin
+  secret: admin_password
+secrets:
+- name: admin_password
+  immutable: true
+  reveal: true
+  note: Password for FreshRSS's administrator user (named for the owner's Authentik username when known, else admin). It works on FreshRSS's own login form only while sign-in with Authentik is off.
+- name: oidc_client_secret
+  # Authentik's client secret for FreshRSS; Homestead generates it, hands
+  # it to Authentik, and the supervisor exports OIDC_CLIENT_SECRET.
+  consumers:
+  - service: freshrss
+    env: OIDC_CLIENT_SECRET_FILE
+    export: true
+- name: oidc_crypto_key
+  # mod_auth_openidc's session crypto passphrase, exported as
+  # OIDC_CLIENT_CRYPTO_KEY. Generated once; changing it only signs
+  # everyone out.
+  consumers:
+  - service: freshrss
+    env: OIDC_CLIENT_CRYPTO_KEY_FILE
+    export: true
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik once sign-in is applied on the app's page, and that is then the only way in; FreshRSS's own login form is off until sign-in is turned off.

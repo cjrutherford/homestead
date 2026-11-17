@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"homestead/internal/apiclient"
+	"homestead/internal/appaccess"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 )
@@ -18,7 +21,7 @@ import (
 // endpoints.
 func runApps(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|mine|names|plan|install|reach|configure|secrets|sign-in|public|move|setup|uninstall>")
+		fmt.Fprintln(stderr, "usage: homesteadctl apps <list|show|bundles|mine|names|plan|install|reach|configure|secrets|sign-in|public|read-links|move|setup|uninstall>")
 		return exitUsage
 	}
 	switch args[0] {
@@ -28,6 +31,8 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsMine(ctx, client, args[1:], stdout, stderr)
 	case "names":
 		return runAppsNames(ctx, client, stdout, stderr)
+	case "show":
+		return runAppsShow(ctx, client, args[1:], stdout, stderr)
 	case "plan":
 		return runAppsPlan(ctx, client, args[1:], stdout, stderr)
 	case "install":
@@ -36,10 +41,14 @@ func runApps(ctx context.Context, client *apiclient.Client, args []string, stdou
 		return runAppsReach(ctx, client, args[1:], stdout, stderr)
 	case "configure":
 		return runAppsConfigure(ctx, client, args[1:], stdout, stderr)
+	case "bundles":
+		return runAppsBundles(ctx, client, stdout, stderr)
 	case "secrets":
 		return runAppsSecrets(ctx, client, args[1:], stdout, stderr)
 	case "sign-in":
 		return runAppsSignIn(ctx, client, args[1:], stdout, stderr)
+	case "read-links":
+		return runAppsReadLinks(ctx, client, args[1:], stdout, stderr)
 	case "public":
 		return runAppsPublic(ctx, client, args[1:], stdout, stderr)
 	case "setup":
@@ -146,8 +155,204 @@ func runAppsPlan(ctx context.Context, client *apiclient.Client, args []string, s
 		fmt.Fprintf(stdout, "note: %s\n", note)
 	}
 	printFilesLink(stdout, plan.FilesLink)
+	printInstallSignIn(stdout, plan.SignIn)
+	if err := printInstallAccess(ctx, client, rest[0], body, plan.Access, stdout, nil); err != nil {
+		return fail(stderr, err)
+	}
 	fmt.Fprintf(stdout, "actions: %s\n", strings.Join(plan.Actions, ", "))
 	return exitOK
+}
+
+func selfManagedNotice(access *apiclient.InstallAccess) string {
+	if access.Notice != "" {
+		return access.Notice
+	}
+	return "This app keeps its own accounts. Homestead does not control who can sign in to it; create accounts in the app itself."
+}
+
+func printInstallAccess(ctx context.Context, client *apiclient.Client, pkg string, body map[string]any, access *apiclient.InstallAccess, w io.Writer, digestOut *string) error {
+	if access == nil {
+		return fmt.Errorf("this appliance did not provide an app access review")
+	}
+	switch access.Mode {
+	case "open":
+		fmt.Fprintln(w, "access: this app is open to everyone who can reach it")
+		return nil
+	case "bootstrap":
+		fmt.Fprintln(w, "access: identity provider bootstrap")
+		return nil
+	case "self-managed":
+		if _, supplied := body["choices"]; supplied {
+			return fmt.Errorf("this app keeps its own accounts and does not accept per-person access choices")
+		}
+		fmt.Fprintf(w, "access: %s\n", selfManagedNotice(access))
+		return nil
+	case "unavailable":
+		return fmt.Errorf("app access unavailable: %s", access.Reason)
+	case "managed":
+	default:
+		return fmt.Errorf("unknown app access mode")
+	}
+	fmt.Fprintln(w, "access: the appliance owner has full access")
+	for _, p := range access.People {
+		fmt.Fprintf(w, "person: %d %s (%s), %s\n", p.ID, p.DisplayName, p.Username, p.State)
+	}
+	if _, ok := body["choices"]; !ok {
+		fmt.Fprintln(w, "add a choices array to the input file with person_id and role (none, user, or admin), including [] when no other people exist")
+		return nil
+	}
+	digest, err := client.PlanInstallAccess(ctx, pkg, body)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(body["choices"])
+	if err != nil {
+		return fmt.Errorf("invalid access choices")
+	}
+	var choices []appaccess.Choice
+	if err := json.Unmarshal(data, &choices); err != nil {
+		return fmt.Errorf("invalid access choices")
+	}
+	for _, choice := range choices {
+		fmt.Fprintf(w, "access choice: person %d = %s\n", choice.PersonID, choice.Role)
+	}
+	fmt.Fprintf(w, "access digest: %s\n", digest)
+	if digestOut != nil {
+		*digestOut = digest
+	}
+	return nil
+}
+
+func setInstallAccess(access *apiclient.InstallAccess, body map[string]any, digest string, setup map[string]any) (bool, error) {
+	if access == nil {
+		return false, fmt.Errorf("this appliance did not provide an app access review")
+	}
+	switch access.Mode {
+	case "open", "bootstrap", "self-managed":
+		if _, supplied := body["choices"]; supplied {
+			return false, fmt.Errorf("this app does not accept per-person access choices")
+		}
+		return false, nil
+	case "unavailable":
+		return false, fmt.Errorf("app access unavailable: %s", access.Reason)
+	case "managed":
+	default:
+		return false, fmt.Errorf("unknown app access mode")
+	}
+	if _, legacy := setup["people"]; legacy {
+		return false, fmt.Errorf("use explicit choices for every person instead of legacy --person grants")
+	}
+	raw, ok := body["choices"]
+	if !ok || raw == nil {
+		return false, fmt.Errorf("include an explicit choices array in the input file")
+	}
+	if digest == "" {
+		return false, fmt.Errorf("--approve-access requires the digest from apps plan")
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid access choices")
+	}
+	var choices []appaccess.Choice
+	if err := json.Unmarshal(data, &choices); err != nil || choices == nil {
+		return false, fmt.Errorf("invalid access choices")
+	}
+	admin := false
+	for _, c := range choices {
+		if c.Role == appaccess.Admin {
+			admin = true
+		}
+	}
+	setup["access"] = map[string]any{"digest": digest, "choices": choices}
+	return admin, nil
+}
+
+func printInstallSignIn(w io.Writer, offer *apiclient.InstallSignIn) {
+	if offer == nil {
+		return
+	}
+	if !offer.Offered || offer.Plan == nil {
+		fmt.Fprintf(w, "sign-in with Authentik unavailable: %s\n", offer.Reason)
+		return
+	}
+	p := offer.Plan
+	fmt.Fprintf(w, "sign-in with Authentik: %s; provider %s; application %s\n", p.Title, p.Provider, p.Application)
+	for _, line := range p.Changes {
+		fmt.Fprintf(w, "sign-in: %s\n", line)
+	}
+	for _, uri := range p.RedirectURIs {
+		fmt.Fprintf(w, "sign-in redirect: %s\n", uri)
+	}
+	for _, line := range p.AppSettings {
+		fmt.Fprintf(w, "sign-in setting: %s\n", line)
+	}
+	for _, line := range p.Warnings {
+		fmt.Fprintf(w, "sign-in note: %s\n", line)
+	}
+	if p.AdminRoles != "" {
+		fmt.Fprintf(w, "sign-in roles: %s\n", p.AdminRoles)
+	}
+	fmt.Fprintf(w, "sign-in digest: %s\n", p.Digest)
+	if !offer.TokenKept {
+		fmt.Fprintln(w, "sign-in cannot be set up during install without a retained Authentik API token")
+	}
+}
+
+func approveInstallSignIn(offer *apiclient.InstallSignIn, digest string, people []int64, setup map[string]any) error {
+	if digest == "" {
+		if len(people) != 0 {
+			return fmt.Errorf("--person requires --approve-sign-in")
+		}
+		return nil
+	}
+	if offer == nil || !offer.Offered || offer.Plan == nil {
+		return fmt.Errorf("sign-in is not offered for this install; review the install plan")
+	}
+	if !offer.TokenKept {
+		return fmt.Errorf("sign-in during install requires a retained Authentik API token")
+	}
+	if digest != offer.Plan.Digest {
+		return fmt.Errorf("the sign-in plan changed; review the install plan again")
+	}
+	setup["sign_in"] = map[string]any{"digest": digest}
+	if len(people) != 0 {
+		setup["people"] = people
+	}
+	return nil
+}
+
+// validateInstallPeople catches invalid selections before starting an install.
+// The server must still recheck them when the later grant step runs.
+func validateInstallPeople(ctx context.Context, client *apiclient.Client, ids []int64, w io.Writer) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	view, err := client.People(ctx)
+	if err != nil {
+		return fmt.Errorf("review selected people: %w", err)
+	}
+	if !view.TokenKept || view.ReadError != "" {
+		return fmt.Errorf("cannot review selected people; check homesteadctl people list")
+	}
+	active := map[int64]apiclient.Person{}
+	for _, p := range view.People {
+		if p.State == "active" {
+			active[p.ID] = p
+		}
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		p, ok := active[id]
+		if !ok {
+			return fmt.Errorf("person %d is missing or disabled; review homesteadctl people list", id)
+		}
+		if seen[id] {
+			return fmt.Errorf("person %d was selected more than once", id)
+		}
+		seen[id] = true
+		fmt.Fprintf(w, "grant user access: %s (%s, %d)\n", p.DisplayName, p.Username, id)
+	}
+	return nil
 }
 
 // printFilesLink lists the craft apps the install's setup links to
@@ -194,10 +399,15 @@ const appsInstallUsage = `usage: homesteadctl apps install <package> -f FILE [--
                            public address, prints both digests and changes nothing
   --approve-public DIGEST  install; the appliance then adds the app's address
                            and publishes it by the reviewed digest (follows
-                           the install and the setup)`
+                           the install and the setup)
+  --approve-sign-in DIGEST approve the Authentik plan shown by apps plan
+  --approve-access DIGEST  approve the access choices shown by apps plan
+  --reauth-file FILE       local password for an app-administrator grant
+  --person ID              grant a person access after sign-in (repeatable)`
 
 func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
-	var file, publicName, approvePublic string
+	var file, publicName, approvePublic, approveSignIn, approveAccess, reauthFile string
+	var people []int64
 	var positional []string
 	follow, public := false, false
 	for i := 0; i < len(args); i++ {
@@ -217,6 +427,23 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		case args[i] == "--approve-public" && i+1 < len(args):
 			approvePublic = args[i+1]
 			i++
+		case args[i] == "--approve-sign-in" && i+1 < len(args):
+			approveSignIn = args[i+1]
+			i++
+		case args[i] == "--approve-access" && i+1 < len(args):
+			approveAccess = args[i+1]
+			i++
+		case args[i] == "--reauth-file" && i+1 < len(args):
+			reauthFile = args[i+1]
+			i++
+		case args[i] == "--person" && i+1 < len(args):
+			id, err := strconv.ParseInt(args[i+1], 10, 64)
+			if err != nil || id <= 0 {
+				fmt.Fprintln(stderr, "--person requires a positive person ID")
+				return exitUsage
+			}
+			people = append(people, id)
+			i++
 		case strings.HasPrefix(args[i], "-"):
 			fmt.Fprintf(stderr, "unknown flag %q\n", args[i])
 			return exitUsage
@@ -234,7 +461,7 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 	}
 	pkg := positional[0]
 	if public {
-		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, stdout, stderr)
+		return installWithPublic(ctx, client, pkg, file, body, publicName, approvePublic, approveSignIn, approveAccess, reauthFile, people, stdout, stderr)
 	}
 	// A craft app, or Nextcloud, brings a Nextcloud link for files; the
 	// plan lists it (apps plan) and the install approves it, so the
@@ -245,26 +472,70 @@ func runAppsInstall(ctx context.Context, client *apiclient.Client, args []string
 		return fail(stderr, err)
 	}
 	link := install.FilesLink
-	if link != nil {
-		printFilesLink(stdout, link)
-		body["digest"] = install.Digest
-		body["setup"] = map[string]any{"files_link": map[string]any{"digest": link.Digest}}
+	if install.Access != nil && install.Access.Mode == "self-managed" {
+		if _, supplied := body["choices"]; supplied {
+			return fail(stderr, fmt.Errorf("this app keeps its own accounts and does not accept per-person access choices"))
+		}
+		fmt.Fprintf(stdout, "access: %s\n", selfManagedNotice(install.Access))
 	}
-	id, err := client.InstallPackage(ctx, pkg, body)
+	setup := firstLocalRoute(install.Routes) != nil || link != nil || approveSignIn != "" || len(people) != 0 || approveAccess != "" || (install.Access != nil && install.Access.Mode == "managed")
+	admin := false
+	if setup {
+		body["digest"] = install.Digest
+		setupBody := map[string]any{}
+		if existing, ok := body["setup"]; ok && existing != nil {
+			var valid bool
+			setupBody, valid = existing.(map[string]any)
+			if !valid {
+				return fail(stderr, fmt.Errorf("setup must be an object"))
+			}
+		}
+		if link != nil {
+			printFilesLink(stdout, link)
+			setupBody["files_link"] = map[string]any{"digest": link.Digest}
+		}
+		if err := approveInstallSignIn(install.SignIn, approveSignIn, people, setupBody); err != nil {
+			return fail(stderr, err)
+		}
+		if err := validateInstallPeople(ctx, client, people, stdout); err != nil {
+			return fail(stderr, err)
+		}
+		admin, err = setInstallAccess(install.Access, body, approveAccess, setupBody)
+		if err != nil {
+			return fail(stderr, err)
+		}
+		body["setup"] = setupBody
+	}
+	if !setup && (install.Access == nil || install.Access.Mode == "unavailable") {
+		return fail(stderr, fmt.Errorf("app access is unavailable"))
+	}
+	password := ""
+	if reauthFile != "" {
+		password, err = readSecretFile(reauthFile)
+		if err != nil {
+			return fail(stderr, err)
+		}
+	}
+	var id int64
+	if admin {
+		id, err = client.InstallPackageWithAdmins(ctx, pkg, body, password)
+	} else {
+		id, err = client.InstallPackage(ctx, pkg, body)
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}
 	if !follow {
 		fmt.Fprintf(stdout, "operation: %d\n", id)
-		if link != nil {
-			fmt.Fprintf(stdout, "setup: the appliance adds the address and links Nextcloud after the install; homesteadctl apps setup status %s\n", pkg)
+		if setup {
+			fmt.Fprintf(stdout, "setup: the appliance completes the approved app setup after the install; homesteadctl apps setup status %s\n", pkg)
 		}
 		return exitOK
 	}
-	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK || link == nil {
+	if code := followOperation(ctx, client, id, stdout, stderr); code != exitOK || !setup {
 		return code
 	}
-	return followSetup(ctx, client, pkg, "setup (address, then Nextcloud link):", stdout, stderr)
+	return followSetup(ctx, client, pkg, "setup:", stdout, stderr)
 }
 
 // followSetup follows the setup the appliance runs after an install and
@@ -294,7 +565,7 @@ func followSetup(ctx context.Context, client *apiclient.Client, pkg, title strin
 // public plan, installs by the install digest, adds the app's address to
 // the edge, publishes by the approved digest, and checks each address.
 func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file string, body map[string]any,
-	name, approve string, stdout, stderr io.Writer) int {
+	name, approve, approveSignIn, approveAccess, reauthFile string, people []int64, stdout, stderr io.Writer) int {
 	body["public_name"] = name
 	install, err := client.PlanInstall(ctx, pkg, body)
 	if err != nil {
@@ -305,7 +576,8 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		return fail(stderr, fmt.Errorf("%s has no address to publish", pkg))
 	}
 	enabled := true
-	req := apiclient.AppPublicRequest{Enabled: &enabled, Hostname: name, Route: string(route.Host), BeforeInstall: true}
+	req := apiclient.AppPublicRequest{Enabled: &enabled, Hostname: name, Route: string(route.Host), BeforeInstall: true,
+		AnticipateSignIn: install.Access != nil && install.Access.Mode == "managed"}
 	plan, err := client.AppPublicPlan(ctx, pkg, req)
 	if err != nil {
 		return fail(stderr, err)
@@ -326,12 +598,24 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 		fmt.Fprintf(stdout, "install digest: %s\n", install.Digest)
 		printPublicBeforeInstall(stdout, plan)
 		printFilesLink(stdout, install.FilesLink)
+		printInstallSignIn(stdout, install.SignIn)
+		accessDigest := ""
+		if err := printInstallAccess(ctx, client, pkg, body, install.Access, stdout, &accessDigest); err != nil {
+			return fail(stderr, err)
+		}
 		named := " " + plan.Hostname
 		if plan.Path != "" {
 			// A path app has no name of its own to pass (ADR-044).
 			named = ""
 		}
-		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public%s --approve-public %s\n", pkg, file, named, plan.Digest)
+		fmt.Fprintf(stdout, "approve: homesteadctl apps install %s -f %s --public%s --approve-public %s", pkg, file, named, plan.Digest)
+		if si := install.SignIn; si != nil && si.Offered && si.TokenKept && si.Plan != nil {
+			fmt.Fprintf(stdout, " --approve-sign-in %s", si.Plan.Digest)
+		}
+		if accessDigest != "" {
+			fmt.Fprintf(stdout, " --approve-access %s", accessDigest)
+		}
+		fmt.Fprintln(stdout)
 		return exitOK
 	}
 	if approve != plan.Digest {
@@ -344,12 +628,45 @@ func installWithPublic(ctx context.Context, client *apiclient.Client, pkg, file 
 	// The appliance adds the app's address and publishes it by the
 	// approved digest once the install succeeds (S324, ADR-048).
 	setupBody := map[string]any{"public": map[string]any{"hostname": plan.Hostname, "route": string(route.Host), "digest": approve}}
+	if existing, ok := body["setup"]; ok && existing != nil {
+		prior, valid := existing.(map[string]any)
+		if !valid {
+			return fail(stderr, fmt.Errorf("setup must be an object"))
+		}
+		for k, v := range prior {
+			if k != "public" {
+				setupBody[k] = v
+			}
+		}
+	}
+	if err := approveInstallSignIn(install.SignIn, approveSignIn, people, setupBody); err != nil {
+		return fail(stderr, err)
+	}
+	if err := validateInstallPeople(ctx, client, people, stdout); err != nil {
+		return fail(stderr, err)
+	}
+	admin, err := setInstallAccess(install.Access, body, approveAccess, setupBody)
+	if err != nil {
+		return fail(stderr, err)
+	}
 	if install.FilesLink != nil {
 		// The Nextcloud link the install review listed (S326).
 		setupBody["files_link"] = map[string]any{"digest": install.FilesLink.Digest}
 	}
 	body["setup"] = setupBody
-	id, err := client.InstallPackage(ctx, pkg, body)
+	password := ""
+	if reauthFile != "" {
+		password, err = readSecretFile(reauthFile)
+		if err != nil {
+			return fail(stderr, err)
+		}
+	}
+	var id int64
+	if admin {
+		id, err = client.InstallPackageWithAdmins(ctx, pkg, body, password)
+	} else {
+		id, err = client.InstallPackage(ctx, pkg, body)
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -556,6 +873,71 @@ func runAppsConfigure(ctx context.Context, client *apiclient.Client, args []stri
 	}
 	fmt.Fprintf(stdout, "operation: %d\n", id)
 	return exitOK
+}
+
+// runAppsShow prints one package's summary and its declared integrations
+// (S341). The lines are advisory: they say what the app can work with,
+// never that Homestead has configured it.
+func runAppsShow(ctx context.Context, client *apiclient.Client, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintln(stderr, "usage: homesteadctl apps show <package>")
+		return exitUsage
+	}
+	manifest, err := client.CatalogPackage(ctx, args[0])
+	if err != nil {
+		return fail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "%s %s — %s\n", manifest.Name, manifest.Version, manifest.Blurb)
+	for _, service := range manifest.Services {
+		if service.Exposes != "" && service.ContainerPort != 0 {
+			fmt.Fprintf(stdout, "  container port: %s %d\n", service.Name, service.ContainerPort)
+		}
+	}
+	for _, integration := range manifest.Works {
+		fmt.Fprintf(stdout, "  integrates: %s %s %s (%s) — %s\n",
+			integration.Level, integration.Kind, integration.Target, integration.Title, integration.Note)
+	}
+	return exitOK
+}
+
+// runAppsBundles prints the curated profiles with their combined memory
+// and storage verdicts (S344). Members the catalog does not carry yet are
+// named, so an incomplete profile never reads as installable today.
+func runAppsBundles(ctx context.Context, client *apiclient.Client, stdout, stderr io.Writer) int {
+	bundles, err := client.CatalogBundles(ctx)
+	if err != nil {
+		return fail(stderr, err)
+	}
+	for _, bundle := range bundles {
+		fmt.Fprintf(stdout, "%s: %s\n", bundle.Title, bundle.Blurb)
+		fmt.Fprintf(stdout, "  %s\n", bundle.Detail)
+		for _, storageRow := range bundle.Storage {
+			state := fmt.Sprintf("%s of %s free", humanBytes(storageRow.Needed), humanBytes(storageRow.Free))
+			if !storageRow.Known {
+				state = fmt.Sprintf("%s needed; no assignment for this class", humanBytes(storageRow.Needed))
+			}
+			fmt.Fprintf(stdout, "  storage %s: %s\n", storageRow.Class, state)
+		}
+		if len(bundle.Missing) > 0 {
+			fmt.Fprintf(stdout, "  not in the catalog yet: %s\n", strings.Join(bundle.Missing, ", "))
+		}
+	}
+	return exitOK
+}
+
+// humanBytes renders a byte count in decimal units: owners read
+// capacities, not integers.
+func humanBytes(bytes uint64) string {
+	const unit = 1000
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := uint64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "kMGTPE"[exp])
 }
 
 // runAppsSecrets lists a package's secret-backed variables, or registers

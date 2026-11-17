@@ -5,6 +5,7 @@
 # The version below is the vendored storytold release and must equal the
 # image tag and the version in catalog/craft/craft-manifest.yaml.
 name: filmcraft
+publish: path  # ADR-062: public path behind the shared Authentik gate; the LAN stays open
 version: 0.8.0
 title: FilmCraft
 blurb: Video editor with a multi-track timeline that runs in your browser.
@@ -37,9 +38,10 @@ exposure:
   endpoints:
   - endpoint: web
     recommended: local
-    allowwider: false
+    allowwider: true
     warnings:
     - FilmCraft stores nothing on the appliance, so widening exposure would offer a public video editor whose projects never reach your storage. With Nextcloud file storage linked, its document path (_homestead/files/) is forwarded to your appliance, which reads and writes your Nextcloud on the browser's behalf; it needs a Homestead operator session opened from the dashboard, but widening exposure puts the host, that path and your document transfers beyond the LAN. Keep it local.
+    - If you publish it, its public path sits behind the Authentik gate, so only people granted this app and the owner can open it. Your local address stays open (ADR-062).
 browser:
 - capability: webcodecs
   reason: "H.264, HEVC, VP9 and AV1 video can be decoded by the browser's WebCodecs (usually in hardware); without it FilmCraft uses its own decoders."
@@ -55,3 +57,8 @@ browser:
   reason: "The crash-recovery copy and imported media are kept in the browser's private file storage, which the browser may clear."
 sso:
   class: unsupported
+  # ADR-062: the app has no sign-in of its own. Published, its path is behind
+  # the shared Authentik gate on the tunnel entry only; the local names stay
+  # open (ADR-045). No identity header is passed on and nothing bypasses.
+  forwardauth:
+    service: filmcraft

@@ -42,6 +42,9 @@ func newLinkRig(t *testing.T) *linkRig {
 	srv.MountCraftFiles(CraftFilesConfig{Store: st, Secrets: secrets, YAMLPath: filepath.Join(dir, "craft-files.yaml"), CatalogDir: catalogDir})
 	srv.MountAppSetup(st, catalogDir, nil)
 	r := &linkRig{srv: srv, st: st, a: srv.appSetup}
+	prevTrust := trustAppHosts
+	trustAppHosts = func(context.Context, catalog.Manifest, string, []string, []string) error { return nil }
+	t.Cleanup(func() { trustAppHosts = prevTrust })
 	r.a.linkRetry = time.Millisecond
 	r.a.linkFn = func(_ context.Context, root, _ string) error {
 		r.mu.Lock()

@@ -1,0 +1,110 @@
+{
+  "app": "sudoku",
+  "version": "0.1.0",
+  "title": "Sudoku",
+  "archive": "sudoku-source.tar.gz",
+  "sha256": "18d0c4c6dc4d86b5ea7e52cffedf01e1f1339c6e8670dd64a5cd31d80f4cdb1b",
+  "size": 1537150,
+  "subtree": "src/sudoku",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/sudoku/index.html",
+    "src/sudoku/package-lock.json",
+    "src/sudoku/src/main.js",
+    "src/sudoku/src/net/puter.js",
+    "src/sudoku/public/site.webmanifest"
+  ],
+  "index": "src/sudoku/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\"></script>",
+  "service_worker": null,
+  "patches": [
+    {
+      "file": "src/sudoku/index.html",
+      "old": "    <!-- Optional backend: an account carries your times and your unfinished\n         puzzle between devices. The game is fully playable if this never\n         loads, so it is not deferred behind anything. https://docs.puter.com/ -->\n",
+      "new": "",
+      "why": "Drop the comment that names the hosted Puter site."
+    },
+    {
+      "file": "src/sudoku/index.html",
+      "old": "\n          <footer class=\"app-footer\">\n            <a href=\"https://developer.puter.com\" target=\"_blank\" rel=\"noopener noreferrer\">Powered by Puter</a>\n          </footer>\n",
+      "new": "",
+      "why": "Remove the \"Powered by Puter\" link: no links to other sites."
+    },
+    {
+      "file": "src/sudoku/index.html",
+      "old": "<script type=\"module\" src=\"/src/main.js\"></script>",
+      "new": "<script type=\"module\" src=\"/src/homestead/boot.js\"></script>",
+      "why": "Start through the Homestead entry point, which separates browser storage by person and registers the service worker, then starts the game."
+    },
+    {
+      "file": "src/sudoku/src/main.js",
+      "old": "  const hosted = account.isHostedSession();\n\n  if (!state.signedIn) {",
+      "new": "  const hosted = true;\n\n  if (!state.signedIn) {",
+      "why": "The session belongs to the bridge, so there is no sign-out to offer: the account button becomes a label."
+    },
+    {
+      "file": "src/sudoku/src/main.js",
+      "old": "state.accountName = user?.username ?? null;",
+      "new": "state.accountName = user ? 'Homestead user' : null;",
+      "why": "Show \"Homestead user\", never the opaque subject."
+    },
+    {
+      "file": "src/sudoku/src/main.js",
+      "old": "'Sign in with Puter'",
+      "new": "'Sign in'",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/sudoku/src/main.js",
+      "old": "    ? `Signed in as ${state.accountName ?? 'your Puter account'}`",
+      "new": "    ? `Signed in as ${state.accountName ?? 'Homestead user'}`",
+      "why": "No Puter wording."
+    },
+    {
+      "file": "src/sudoku/src/main.js",
+      "old": "hosted ? `Signed in as ${state.accountName ?? 'your Puter account'}` : 'Sign out'",
+      "new": "hosted ? `Signed in as ${state.accountName ?? 'Homestead user'}` : 'Sign out'",
+      "why": "No Puter wording."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.del",
+      "auth.isSignedIn",
+      "auth.getUser"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  },
+  "add_files": [
+    {
+      "target": "src/sudoku/src/homestead/boot.js",
+      "source": "sudoku-person-storage.js"
+    },
+    {
+      "target": "src/sudoku/public/sw.js",
+      "source": "sudoku-sw.js"
+    }
+  ]
+}

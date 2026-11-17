@@ -48,6 +48,7 @@ const RULES: Rule[] = [
   [/^POST \/api\/v1\/tls\/local-ca\/leaves\/reissue$/, () => ({ title: 'Reissue local certificates', done: 'Local certificates reissued' })],
   [/^POST \/api\/v1\/tls\/local-ca\/rotation$/, () => ({ title: 'Rotate local root', done: 'Local root rotated' })],
   [/^POST \/api\/v1\/tls\/issuance\/apply$/, () => ({ title: 'Issue certificate', done: 'Certificate issued' })],
+  [/^POST \/api\/v1\/backups\/identity\/rewrap$/, () => ({ title: 'Re-wrap backups', done: 'Backups re-wrapped' })],
   [/^POST \/api\/v1\/tunnel\/setup$/, () => ({ title: 'Set up tunnel', done: 'Tunnel set up' })],
   [/^DELETE \/api\/v1\/tunnel\/tunnels\/[^/]+$/, () => ({ title: 'Remove tunnel', done: 'Tunnel removed' })],
 ];
@@ -78,6 +79,7 @@ const TYPES: Record<string, OrderLabel> = {
   'tunnel.setup': { title: 'Set up tunnel', done: 'Tunnel set up' },
   'tunnel.teardown': { title: 'Remove tunnel', done: 'Tunnel removed' },
   'backup.run': { title: 'Back up', done: 'Backup finished' },
+  'backup.rewrap': { title: 'Re-wrap backups', done: 'Backups re-wrapped' },
   'backup.job': { title: 'Run scheduled backup', done: 'Scheduled backup finished' },
   'backup.restore': { title: 'Restore backup', done: 'Backup restored' },
   'app.update': { title: 'Update app', done: 'App updated' },

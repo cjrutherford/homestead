@@ -2,6 +2,7 @@
   <header class="home-bar">
     <p class="home-mark">Homestead</p>
     <nav class="home-actions" aria-label="Account">
+      <a class="button guide-link" href="/guide/">Guide</a>
       @if (isOwner()) {
         <a class="button" routerLink="/admin">Administration</a>
       }
@@ -24,10 +25,18 @@
           <ul class="tiles" aria-label="Your apps">
             @for (app of apps(); track app.name) {
               <li>
-                <a class="tile" [href]="app.url" [attr.data-icon]="app.icon">
+                <div class="tile" [attr.data-icon]="app.icon">
                   <hs-app-icon class="tile-icon" [icon]="app.icon" [title]="app.title || app.name" />
                   <span class="tile-name">{{ app.title }}</span>
-                </a>
+                  <span class="tile-links">
+                    <a class="tile-link" [href]="app.local_url" [attr.aria-label]="'Open ' + app.title + ' on the local network'">Local</a>
+                    @if (app.public_url) {
+                      <a class="tile-link" [href]="app.public_url" [attr.aria-label]="'Open ' + app.title + ' from anywhere'">Public</a>
+                    } @else {
+                      <span class="tile-link tile-link-off" [attr.title]="app.title + ' is not published on a public address yet'">Not public</span>
+                    }
+                  </span>
+                </div>
               </li>
             }
           </ul>

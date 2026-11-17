@@ -50,6 +50,12 @@ export class Claim implements OnInit {
         if (identity.state !== 'CLAIMED') {
           return;
         }
+        if (identity.setup_pending) {
+          // Token redeemed but no administrator yet (a reload or failure
+          // between the steps): carry on at the account step.
+          this.step.set('admin');
+          return;
+        }
         this.wizards.load(WIZARD_ID).subscribe({
           next: (saved) => {
             if (saved.step === 'done') {

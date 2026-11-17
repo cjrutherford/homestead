@@ -63,6 +63,9 @@ describe('Catalog', () => {
     // The app page's Public address panel (S290) reads its own status; app-public.spec covers it.
     http.match('/api/v1/catalog/jellyfin/public');
     http.match('/api/v1/catalog/jellyfin/move');
+    http.match((r) => /^\/api\/v1\/apps\/[^/]+\/read-links$/.test(r.url));
+    // Bundle grading (S344) is advisory; bundles.spec-style tests flush it explicitly.
+    http.match('/api/v1/catalog/bundles');
     http.verify();
   });
 
@@ -75,6 +78,53 @@ describe('Catalog', () => {
     http.expectOne('/api/v1/catalog').flush(PACKAGES);
     fixture.detectChanges();
   }
+
+  it('grades the curated bundles against the appliance (S344)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/catalog/bundles').flush([
+      {
+        Bundle: 'starter',
+        Title: 'Starter',
+        Blurb: 'Files, media and passwords on a modest appliance.',
+        Members: [{ Name: 'jellyfin', Available: true, MemoryMB: 2048 }],
+        Missing: ['vaultwarden'],
+        Complete: false,
+        TotalMemory: 2048,
+        HostMemory: 16384,
+        Storage: [{ Class: 'application', Needed: 1000, Free: 500, Known: true, OK: false }],
+        Passed: false,
+        Detail: 'bundle blocked: application storage needs 1000 bytes, host has 500',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('Starter');
+    expect(text()).toContain('bundle blocked');
+    expect(text()).toContain('Not in the catalog yet: vaultwarden');
+  });
+
+  it('lists bundle members and tolerates empty lists (S394)', () => {
+    fixture.detectChanges();
+    http.expectOne('/api/v1/catalog').flush(PACKAGES);
+    http.expectOne('/api/v1/catalog/bundles').flush([
+      {
+        Bundle: 'starter',
+        Title: 'Starter',
+        Blurb: 'Files.',
+        Members: [{ Name: 'nextcloud', Available: true, MemoryMB: 512 }],
+        Missing: null,
+        Complete: true,
+        TotalMemory: 512,
+        HostMemory: 16384,
+        Storage: null,
+        Passed: true,
+        Detail: 'bundle fits',
+      },
+    ]);
+    fixture.detectChanges();
+    expect(text()).toContain('nextcloud');
+    expect(text()).not.toContain('Not in the catalog yet');
+  });
 
   it('lists curated packages', () => {
     load();
@@ -162,6 +212,28 @@ describe('Catalog', () => {
     http.expectOne('/api/v1/catalog').error(new ProgressEvent('error'), { status: 0 });
     fixture.detectChanges();
     expect(text()).toContain('Cannot reach the appliance. Check that homestead-server is running');
+  });
+
+  it('shows declared integrations as works with links (S341)', () => {
+    load();
+    fixture.componentInstance['select']('jellyfin');
+    http.expectOne('/api/v1/catalog/jellyfin').flush({
+      ...MANIFEST,
+      Works: [
+        {
+          Kind: 'identity',
+          Level: 'L2',
+          Target: 'authentik',
+          Title: 'Authentik',
+          Note: 'Sign in through Authentik.',
+        },
+      ],
+    });
+    http.match('/api/v1/edge/routes');
+    http.match('/api/v1/names');
+    fixture.detectChanges();
+    expect(text()).toContain('Works with');
+    expect(text()).toContain('Sign in through Authentik.');
   });
 
   it('applies configuration variables to an installed package', () => {

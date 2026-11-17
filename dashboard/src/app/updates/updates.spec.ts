@@ -157,11 +157,13 @@ describe('Updates craft inputs (S279)', () => {
     const http = TestBed.inject(HttpTestingController);
     const page = fixture.componentInstance as any;
     page.setCraft('wordcraft', 'manifest', '/srv/m.yaml');
+    page.setCraft('wordcraft', 'signature', '/srv/m.yaml.sig');
     page.setCraftOlder('wordcraft', true);
     page.apply('wordcraft');
     const request = http.expectOne('/api/v1/updates/wordcraft/apply');
     expect(request.request.body.craft).toEqual({
       manifest: '/srv/m.yaml',
+      signature: '/srv/m.yaml.sig',
       allow_older: true,
     });
     request.flush({ id: 3 });

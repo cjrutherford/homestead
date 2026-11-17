@@ -28,6 +28,9 @@
       <p class="brand">Homestead</p>
 
       <nav aria-label="Primary">
+        @if (sessions.isLoggedIn()) {
+          <a class="nav-link" routerLink="/">Apps dashboard</a>
+        }
         @for (group of groups(); track group.id) {
           <div class="nav-group">
             <button
@@ -65,6 +68,7 @@
 
       <div class="sidebar-foot">
         @if (sessions.isLoggedIn()) {
+          <a class="guide-link" href="/guide/">Guide</a>
           <span class="username">{{ sessions.username() }}</span>
           <button type="button" (click)="logout()">Log out</button>
         } @else {

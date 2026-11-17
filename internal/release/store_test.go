@@ -167,3 +167,64 @@ func TestAddKeyRaceIsConflict(t *testing.T) {
 		t.Fatalf("wins = %d, want 1", wins)
 	}
 }
+
+func TestBuildTimeReleaseKeyReplacesPlaceholder(t *testing.T) {
+	plain := newPlatformClass("").embedded()
+	if !plain.Placeholder || plain.KeyID == "" {
+		t.Fatalf("plain build = %+v", plain)
+	}
+	signer := newTestSigner(t)
+	line := strings.Split(strings.TrimSpace(signer.pubText()), "\n")
+	prod := newPlatformClass(line[len(line)-1]).embedded()
+	if prod.Placeholder || prod.KeyID != signer.parsed(t).KeyID || prod.Label != productionKeyLabel || prod.Source != SourceEmbedded {
+		t.Fatalf("production build = %+v", prod)
+	}
+}
+
+// TestRotationEndToEnd follows the owner procedure: trust the new key
+// beside the old one, accept releases signed by either, then retire the
+// old key so only the new one verifies.
+func TestRotationEndToEnd(t *testing.T) {
+	s := openStore(t)
+	oldKey, newKey := newTestSigner(t), newTestSigner(t)
+	if _, err := s.AddKey(oldKey.pubText(), "old", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	verifyWith := func(sg *testSigner) error {
+		keys, err := s.Keys()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parsed []PublicKey
+		for _, k := range keys {
+			p, err := ParsePublicKey(k.PublicKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed = append(parsed, p)
+		}
+		_, err = Verify(sg.fixture(t, "1.0.0", 5).inputs(parsed...))
+		return err
+	}
+	if err := verifyWith(oldKey); err != nil {
+		t.Fatalf("old key before rotation: %v", err)
+	}
+	if _, err := s.AddKey(newKey.pubText(), "new", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyWith(oldKey); err != nil {
+		t.Fatalf("old key while both trusted: %v", err)
+	}
+	if err := verifyWith(newKey); err != nil {
+		t.Fatalf("new key while both trusted: %v", err)
+	}
+	if err := s.RemoveKey(oldKey.parsed(t).KeyID); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyWith(newKey); err != nil {
+		t.Fatalf("new key after retiring old: %v", err)
+	}
+	if err := verifyWith(oldKey); err == nil {
+		t.Fatal("retired key still verifies")
+	}
+}

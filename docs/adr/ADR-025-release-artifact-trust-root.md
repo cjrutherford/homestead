@@ -69,6 +69,15 @@ Platform binary replacement happens in a separate privileged apply unit, not in 
 The same trust chain covers craft container images through a signed image
 manifest verified on the appliance; ADR-028 holds the substance.
 
+## Amended by S493
+The embedded key can be swapped without code changes: a release build sets
+`internal/release.ReleasePublicKey` through `-ldflags -X` (the Makefile does
+this from `release/release.pub`). `scripts/release/keygen.sh` generates the
+keypair offline (private key outside the repository, mode 600, passphrase by
+minisign). Rotation is trust-then-retire through the existing trust routes,
+CLI, and Updates page; the procedure is in `docs/RELEASING.md`. The placeholder
+stays in plain (non-release) builds.
+
 ## Consequences
 - Key rotation for HAI is an owner key import (or a binary release).
 - Release process must publish checksums with version and counter, and

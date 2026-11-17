@@ -34,6 +34,7 @@ import (
 // rejects them without a valid session and hands the verified session to
 // the handler through the request context.
 func (s *Server) MountAuth(svc *auth.Service, auditSvc *audit.Service) {
+	s.hasAdmin = svc.HasAdmin
 	s.mux.HandleFunc("POST /api/v1/admins/setup", s.handleAdminSetup(svc, auditSvc))
 	s.mux.HandleFunc("POST /api/v1/sessions", s.handleLogin(svc, auditSvc))
 	s.mux.HandleFunc("DELETE /api/v1/sessions", s.handleLogout(svc, auditSvc))
@@ -233,6 +234,14 @@ func (s *Server) handleLogout(svc *auth.Service, auditSvc *audit.Service) http.H
 const (
 	SessionCookieName = "homestead_session"
 	CSRFCookieName    = "homestead_csrf"
+	// HostSessionCookieName and HostCSRFCookieName are the names over TLS
+	// (ADR-061 §4, S470): the __Host- prefix makes a browser refuse to
+	// store them unless they are Secure, Path=/ and without a Domain, so
+	// another subdomain or a plain-HTTP page cannot overwrite them. A
+	// plain-HTTP request cannot carry a Secure cookie, so it keeps the
+	// unprefixed names; the daemon reads only the names that fit the scheme.
+	HostSessionCookieName = "__Host-" + SessionCookieName
+	HostCSRFCookieName    = "__Host-" + CSRFCookieName
 	// CSRFHeader carries the CSRF token on cookie-authenticated
 	// mutating requests.
 	CSRFHeader = "X-CSRF-Token"
@@ -253,24 +262,45 @@ func setSessionCookies(w http.ResponseWriter, r *http.Request, session auth.Sess
 // flag: the SSO callback knows its scheme from the planned origin, not
 // from request headers.
 func setSessionCookiesAs(w http.ResponseWriter, secure bool, session auth.Session) {
+	sessName, csrfName := cookieNames(secure)
 	http.SetCookie(w, &http.Cookie{
-		Name: SessionCookieName, Value: session.Token, Path: "/",
+		Name: sessName, Value: session.Token, Path: "/",
 		Expires: session.ExpiresAt, HttpOnly: true, Secure: secure,
 		SameSite: http.SameSiteStrictMode,
 	})
 	http.SetCookie(w, &http.Cookie{
-		Name: CSRFCookieName, Value: session.CSRFToken, Path: "/",
+		Name: csrfName, Value: session.CSRFToken, Path: "/",
 		Expires: session.ExpiresAt, HttpOnly: false, Secure: secure,
 		SameSite: http.SameSiteStrictMode,
 	})
 }
 
+// cookieNames are the session and CSRF cookie names for a scheme.
+func cookieNames(secure bool) (session, csrf string) {
+	if secure {
+		return HostSessionCookieName, HostCSRFCookieName
+	}
+	return SessionCookieName, CSRFCookieName
+}
+
+// sessionCookie is the request's session cookie under the name that fits
+// its scheme.
+func sessionCookie(r *http.Request) (*http.Cookie, error) {
+	name, _ := cookieNames(requestIsTLS(r))
+	return r.Cookie(name)
+}
+
+// clearSessionCookies expires both names, so a cookie from before the
+// rename goes away at the next sign-out.
 func clearSessionCookies(w http.ResponseWriter, r *http.Request) {
 	secure := requestIsTLS(r)
-	for _, name := range []string{SessionCookieName, CSRFCookieName} {
+	for _, name := range []string{HostSessionCookieName, HostCSRFCookieName, SessionCookieName, CSRFCookieName} {
+		if !secure && strings.HasPrefix(name, "__Host-") {
+			continue
+		}
 		http.SetCookie(w, &http.Cookie{
 			Name: name, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(0, 0),
-			HttpOnly: name == SessionCookieName, Secure: secure,
+			HttpOnly: name == SessionCookieName || name == HostSessionCookieName, Secure: secure,
 			SameSite: http.SameSiteStrictMode,
 		})
 	}
@@ -283,7 +313,7 @@ func sessionCredential(r *http.Request) (token string, viaCookie, ok bool) {
 	if t, found := bearerToken(r.Header.Get("Authorization")); found {
 		return t, false, true
 	}
-	if c, err := r.Cookie(SessionCookieName); err == nil && c.Value != "" {
+	if c, err := sessionCookie(r); err == nil && c.Value != "" {
 		return c.Value, true, true
 	}
 	return "", false, false

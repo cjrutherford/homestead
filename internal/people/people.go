@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"homestead/internal/purge"
 	"homestead/internal/sso"
 )
 
@@ -63,6 +64,10 @@ type Service struct {
 	// Apps lists the packages that sign in with Authentik (the apps that
 	// can be granted).
 	Apps func() ([]string, error)
+	// AdminOnly says whether an app is reachable only by administrators
+	// (forward-auth access admin-only); such an app has no users group, so
+	// it can be granted only as app admin. Nil means none are.
+	AdminOnly func(app string) bool
 	// OwnerSub is the linked owner's Authentik subject; that user is the
 	// owner, never a person, and is not listed.
 	OwnerSub func() string
@@ -71,6 +76,84 @@ type Service struct {
 	// EndSessions ends a person's dashboard sessions (ADR-050 §1): when
 	// they are disabled, removed or no longer match Authentik.
 	EndSessions func(personID int64)
+	// PublicAuthentik returns Authentik's public (tunnel) address, or "".
+	// A one-time link then also comes back on that address, so a person
+	// away from the local network can open it.
+	PublicAuthentik func() string
+	// Purge ends a removed person's sharing in the Everything apps (S427,
+	// ADR-058). Nil when there is nothing to purge.
+	Purge *purge.Service
+	// DropAppAdmin takes a person's administrator rights in an app away
+	// now, in the app itself (S507): Nextcloud admin rights otherwise
+	// change only at the next sign-in. Nil when no app needs it. A failure
+	// never fails the People action; it is audited and returned as a warning.
+	DropAppAdmin func(ctx context.Context, app, username, email string) error
+}
+
+type warningsKey struct{}
+
+// Warnings collects what a People action could not finish without failing
+// (S507); handlers put it in the response.
+type Warnings struct{ list []string }
+
+// WithWarnings returns a context whose Service calls report warnings to w.
+func WithWarnings(ctx context.Context, w *Warnings) context.Context {
+	return context.WithValue(ctx, warningsKey{}, w)
+}
+
+// List returns the warnings, in order.
+func (w *Warnings) List() []string {
+	if w == nil {
+		return nil
+	}
+	return w.list
+}
+
+// NextcloudApp is the package whose admin rights DropAppAdmin removes.
+const NextcloudApp = "nextcloud"
+
+// dropAdmin runs DropAppAdmin for p and records any failure.
+func (s *Service) dropAdmin(ctx context.Context, actor string, p Person, app string) {
+	if s.DropAppAdmin == nil {
+		return
+	}
+	if err := s.DropAppAdmin(ctx, app, p.Username, p.Email); err != nil {
+		s.audit(actor, "people.app-admin-drop", "error", fmt.Sprintf("%s (person %d): %s administrator rights were not removed now; they end at the next sign-in", p.Username, p.ID, app))
+		if w, ok := ctx.Value(warningsKey{}).(*Warnings); ok {
+			w.list = append(w.list, fmt.Sprintf("%s's %s administrator rights could not be removed now; they end at the next sign-in. See the audit log.", p.Username, app))
+		}
+		return
+	}
+	s.audit(actor, "people.app-admin-drop", "ok", fmt.Sprintf("%s (person %d): %s administrator rights removed", p.Username, p.ID, app))
+}
+
+// purgeNote runs the purge for a person who lost app (every Everything app
+// when app is empty) and returns audit text saying how it went. It never
+// fails the caller: removal does not wait on a purge.
+func (s *Service) purgeNote(ctx context.Context, actor string, p Person, app string) string {
+	if s.Purge == nil {
+		return ""
+	}
+	outs := s.Purge.Request(ctx, actor, p.Username, p.uid, app)
+	var done, pending []string
+	for _, o := range outs {
+		if o.State == purge.StateDone {
+			done = append(done, o.App)
+		} else {
+			pending = append(pending, o.App)
+		}
+	}
+	var parts []string
+	if len(done) > 0 {
+		parts = append(parts, "sharing purged in "+strings.Join(done, ", "))
+	}
+	if len(pending) > 0 {
+		parts = append(parts, "purge pending in "+strings.Join(pending, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "; " + strings.Join(parts, "; ")
 }
 
 func (s *Service) endSessions(id int64) {
@@ -152,14 +235,22 @@ type View struct {
 	People    []Person    `json:"people"`
 	Unmanaged []Unmanaged `json:"unmanaged"`
 	Apps      []string    `json:"apps"`
+	// AdminOnly lists the apps that can be granted only as app admin.
+	AdminOnly []string `json:"admin_only"`
+	// Purges are removals whose Everything sharing could not be purged yet
+	// (the app was stopped); they are retried (S427).
+	Purges []purge.Pending `json:"purges"`
 	// ReadError says why the read-back could not run, when it could not.
 	ReadError string `json:"read_error,omitempty"`
 }
 
-// Revealed is a credential shown once. Kind is password or link.
+// Revealed is a credential shown once. Kind is password or link. A link's
+// Value opens on the local network; PublicValue is the same link on
+// Authentik's public address, empty while there is none.
 type Revealed struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
+	Kind        string `json:"kind"`
+	Value       string `json:"value"`
+	PublicValue string `json:"public_value,omitempty"`
 }
 
 var usernameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@+-]{0,149}$`)
@@ -370,10 +461,18 @@ func roleWord(r string) string {
 // List returns the page. Without the kept token it still lists the record,
 // unchecked, and says so.
 func (s *Service) List(ctx context.Context) (View, error) {
-	v := View{People: []Person{}, Unmanaged: []Unmanaged{}}
+	v := View{People: []Person{}, Unmanaged: []Unmanaged{}, Purges: []purge.Pending{}, AdminOnly: []string{}}
 	var err error
+	if v.Purges, err = s.Purge.List(); err != nil {
+		return v, err
+	}
 	if v.Apps, err = s.apps(); err != nil {
 		return v, err
+	}
+	for _, a := range v.Apps {
+		if s.adminOnly(a) {
+			v.AdminOnly = append(v.AdminOnly, a)
+		}
 	}
 	if v.People, err = s.records(); err != nil {
 		return v, err
@@ -474,7 +573,11 @@ func (s *Service) credential(ctx context.Context, api *sso.API, pk int, method, 
 		if err != nil {
 			return nil, credError(err)
 		}
-		return &Revealed{Kind: "link", Value: link}, nil
+		rev := &Revealed{Kind: "link", Value: link}
+		if s.PublicAuthentik != nil {
+			rev.PublicValue = sso.PublicLink(link, s.PublicAuthentik())
+		}
+		return rev, nil
 	}
 	return nil, invalid("method must be %q or %q", MethodLink, MethodGenerated)
 }
@@ -541,7 +644,7 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 		return AddResult{}, err
 	}
 	for _, g := range req.Grants {
-		if err := checkGrant(g, apps); err != nil {
+		if err := s.checkGrant(g, apps); err != nil {
 			return AddResult{}, err
 		}
 	}
@@ -602,6 +705,34 @@ func (s *Service) Add(ctx context.Context, actor string, req AddRequest) (AddRes
 		}
 	}
 	return out, nil
+}
+
+func (s *Service) adminOnly(app string) bool {
+	return s.AdminOnly != nil && s.AdminOnly(app)
+}
+
+// without drops an admin-only app's users group, which does not exist.
+func (s *Service) without(app, users string, groups []string) []string {
+	if !s.adminOnly(app) {
+		return groups
+	}
+	out := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if g != users {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func (s *Service) checkGrant(g Grant, apps []string) error {
+	if err := checkGrant(g, apps); err != nil {
+		return err
+	}
+	if g.Role == RoleUser && s.adminOnly(g.App) {
+		return invalid("%s is for administrators only: grant it as App admin, or give no access", g.App)
+	}
+	return nil
 }
 
 func checkGrant(g Grant, apps []string) error {
@@ -756,6 +887,7 @@ func (s *Service) SetActive(ctx context.Context, actor string, id int64, active 
 	}
 	if !active {
 		s.endSessions(id)
+		s.dropAdmin(ctx, actor, p, NextcloudApp)
 	}
 	s.audit(actor, action, "ok", fmt.Sprintf("%s (person %d)", p.Username, id))
 	if err := s.syncMember(ctx, api, p.pk, active); err != nil {
@@ -800,7 +932,9 @@ func (s *Service) Remove(ctx context.Context, actor string, id int64) error {
 	if err := s.forget(id); err != nil {
 		return err
 	}
-	s.audit(actor, "people.remove", "ok", fmt.Sprintf("removed %s (person %d, %s)", p.Username, id, p.Origin))
+	s.dropAdmin(ctx, actor, p, NextcloudApp)
+	note := s.purgeNote(ctx, actor, p, "")
+	s.audit(actor, "people.remove", "ok", fmt.Sprintf("removed %s (person %d, %s)%s", p.Username, id, p.Origin, note))
 	return nil
 }
 
@@ -842,24 +976,41 @@ func (s *Service) Grant(ctx context.Context, actor string, id int64, g Grant) (P
 	if err != nil {
 		return p, err
 	}
-	if err := checkGrant(g, apps); err != nil {
+	if err := s.checkGrant(g, apps); err != nil {
 		return p, err
 	}
 	api, err := s.client()
 	if err != nil {
 		return p, err
 	}
+	// A setup checks its whole roster before the first grant. Check again
+	// here because Authentik may disable or replace a person mid-sequence.
+	if p.State != StateActive || p.pk == 0 || p.uid == "" {
+		return p, invalid("person %d has no active linked Authentik account", id)
+	}
+	account, err := api.GetAccount(ctx, p.pk)
+	if err != nil {
+		return p, fmt.Errorf("cannot verify the person's Authentik account")
+	}
+	if account == nil || !account.IsActive || account.UID == "" || account.UID != p.uid {
+		return p, invalid("person %d has no active linked Authentik account", id)
+	}
 	if err := s.applyGrant(ctx, api, actor, id, p.pk, g); err != nil {
 		return p, err
+	}
+	if g.App == NextcloudApp && g.Role != RoleAdmin {
+		s.dropAdmin(ctx, actor, p, g.App)
 	}
 	return s.person(id)
 }
 
 func (s *Service) applyGrant(ctx context.Context, api *sso.API, actor string, id int64, pk int, g Grant) error {
 	users, admins := sso.AppGroups(g.App)
-	if err := api.AddToGroup(ctx, users, pk); err != nil {
-		s.audit(actor, "people.grant", "error", fmt.Sprintf("person %d: %s", id, g.App))
-		return groupError(g.App, err)
+	if !s.adminOnly(g.App) {
+		if err := api.AddToGroup(ctx, users, pk); err != nil {
+			s.audit(actor, "people.grant", "error", fmt.Sprintf("person %d: %s", id, g.App))
+			return groupError(g.App, err)
+		}
 	}
 	if g.Role == RoleAdmin {
 		if err := api.AddToGroup(ctx, admins, pk); err != nil {
@@ -871,6 +1022,13 @@ func (s *Service) applyGrant(ctx context.Context, api *sso.API, actor string, id
 	}
 	if err := s.setGrant(id, g.App, g.Role); err != nil {
 		return err
+	}
+	if s.Purge != nil {
+		// Access is back: a stored purge for the same name must not remove it.
+		var username string
+		if s.DB.QueryRow(`SELECT username FROM people WHERE id = ?`, id).Scan(&username) == nil {
+			s.Purge.Cancel(username, g.App)
+		}
 	}
 	s.audit(actor, "people.grant", "ok", fmt.Sprintf("person %d: %s as %s", id, g.App, g.Role))
 	return nil
@@ -897,7 +1055,7 @@ func (s *Service) Revoke(ctx context.Context, actor string, id int64, app string
 		return p, err
 	}
 	users, admins := sso.AppGroups(app)
-	for _, g := range []string{admins, users} {
+	for _, g := range s.without(app, users, []string{admins, users}) {
 		if err := api.RemoveFromGroup(ctx, g, p.pk); err != nil {
 			s.audit(actor, "people.revoke", "error", fmt.Sprintf("person %d: %s", id, app))
 			return p, groupError(app, err)
@@ -906,7 +1064,11 @@ func (s *Service) Revoke(ctx context.Context, actor string, id int64, app string
 	if err := s.dropGrant(id, app); err != nil {
 		return p, err
 	}
-	s.audit(actor, "people.revoke", "ok", fmt.Sprintf("person %d: %s", id, app))
+	if app == NextcloudApp {
+		s.dropAdmin(ctx, actor, p, app)
+	}
+	note := s.purgeNote(ctx, actor, p, app)
+	s.audit(actor, "people.revoke", "ok", fmt.Sprintf("person %d: %s%s", id, app, note))
 	return s.person(id)
 }
 
@@ -1064,8 +1226,10 @@ func (s *Service) recreate(ctx context.Context, api *sso.API, p Person, method s
 	}
 	for _, g := range p.Grants {
 		users, admins := sso.AppGroups(g.App)
-		if err := api.AddToGroup(ctx, users, acct.PK); err != nil {
-			return nil, groupError(g.App, err)
+		if !s.adminOnly(g.App) {
+			if err := api.AddToGroup(ctx, users, acct.PK); err != nil {
+				return nil, groupError(g.App, err)
+			}
 		}
 		if g.Role == RoleAdmin {
 			if err := api.AddToGroup(ctx, admins, acct.PK); err != nil {
@@ -1074,6 +1238,59 @@ func (s *Service) recreate(ctx context.Context, api *sso.API, p Person, method s
 		}
 	}
 	return s.credential(ctx, api, acct.PK, method, "")
+}
+
+// RestoreApp (S456) repopulates one app's Authentik groups from Homestead's
+// recorded grants. Turning an app's sign-in off deletes its groups; turning
+// it on makes them empty, so every grant would read as drift. It only adds
+// members (the owner and members Authentik holds are left alone) and returns
+// how many memberships it restored.
+func (s *Service) RestoreApp(ctx context.Context, app string) (int, error) {
+	rows, err := s.DB.Query(`SELECT p.authentik_pk, g.role FROM people_grants g JOIN people p ON p.id = g.person_id WHERE g.app = ? ORDER BY p.id`, app)
+	if err != nil {
+		return 0, err
+	}
+	type member struct {
+		pk   int
+		role string
+	}
+	var members []member
+	for rows.Next() {
+		var m member
+		if err := rows.Scan(&m.pk, &m.role); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		members = append(members, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if len(members) == 0 {
+		return 0, nil
+	}
+	api, err := s.client()
+	if err != nil {
+		return 0, err
+	}
+	users, admins := sso.AppGroups(app)
+	n := 0
+	for _, m := range members {
+		if !s.adminOnly(app) {
+			if err := api.AddToGroup(ctx, users, m.pk); err != nil {
+				return n, groupError(app, err)
+			}
+			n++
+		}
+		if m.role == RoleAdmin {
+			if err := api.AddToGroup(ctx, admins, m.pk); err != nil {
+				return n, groupError(app, err)
+			}
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.RemoteAccount, apps []string) error {
@@ -1110,7 +1327,7 @@ func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.
 		}
 		switch role {
 		case "":
-			for _, g := range []string{admins, users} {
+			for _, g := range s.without(app, users, []string{admins, users}) {
 				if err := api.RemoveFromGroup(ctx, g, p.pk); err != nil {
 					return groupError(app, err)
 				}
@@ -1123,7 +1340,7 @@ func (s *Service) putBack(ctx context.Context, api *sso.API, p Person, acct sso.
 				return groupError(app, err)
 			}
 		case RoleAdmin:
-			for _, g := range []string{users, admins} {
+			for _, g := range s.without(app, users, []string{users, admins}) {
 				if err := api.AddToGroup(ctx, g, p.pk); err != nil {
 					return groupError(app, err)
 				}

@@ -57,7 +57,9 @@ export function publicError(failure: HttpErrorResponse): string {
           } @else {
             <p>{{ title() }} is reachable only on your network.</p>
           }
-          @if (pathApp(s); as path) {
+          @if (s.never_publish) {
+            <p class="plan-note" data-never-publish>{{ s.reason }} Remove this public name.</p>
+          } @else if (pathApp(s); as path) {
             @if (publicNames(s).length === 0) {
               <p>
                 {{ title() }} answers at {{ path }} under the dashboard's public name, so it takes no name of its own and no DNS record.
@@ -86,7 +88,9 @@ export function publicError(failure: HttpErrorResponse): string {
             </button>
           </p>
           }
-          <p class="hint">{{ coverageRule }}</p>
+          @if (!s.never_publish) {
+            <p class="hint">{{ coverageRule }}</p>
+          }
         }
         @if (error()) {
           <app-state-message kind="error" [headline]="error()" />

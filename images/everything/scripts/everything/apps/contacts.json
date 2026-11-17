@@ -1,0 +1,165 @@
+{
+  "app": "contacts",
+  "version": "0.1.0",
+  "title": "Contacts",
+  "archive": "contacts-source.tar.gz",
+  "sha256": "1c833f87a8e839ea1664739936de202ca2bf2d8c43a450c3b75bb4b3ac0724fd",
+  "size": 5885527,
+  "subtree": "src/contacts",
+  "extra_files": [
+    "LICENSE",
+    "dev/puter-localhost.mjs"
+  ],
+  "required": [
+    "LICENSE",
+    "dev/puter-localhost.mjs",
+    "src/contacts/LICENSE",
+    "src/contacts/index.html",
+    "src/contacts/package-lock.json"
+  ],
+  "index": "src/contacts/index.html",
+  "sdk_tag": "<script src=\"https://js.puter.com/v2/\"></script>",
+  "service_worker": {
+    "template": "contacts-sw.template.js",
+    "target": "src/contacts/public/sw.js",
+    "mode": "runtime"
+  },
+  "patches": [
+    {
+      "file": "src/contacts/vite.config.js",
+      "old": "  plugins: [puterLocalhost('contacts')],\n",
+      "new": "  plugins: [puterLocalhost('contacts')],\n  base: './',\n",
+      "why": "Build with relative asset URLs so the app works under /apps/contacts/ (the other Everything apps do the same upstream)."
+    },
+    {
+      "file": "src/contacts/index.html",
+      "old": "    <!-- Performance -->\n    <link rel=\"preconnect\" href=\"https://js.puter.com\" crossorigin />\n    <link rel=\"dns-prefetch\" href=\"https://js.puter.com\" />\n\n",
+      "new": "",
+      "why": "Remove the preconnect and dns-prefetch to the hosted Puter SDK origin; the build refuses any reference to it and nothing is fetched from Puter."
+    },
+    {
+      "file": "src/contacts/index.html",
+      "old": "    <link rel=\"canonical\" href=\"https://contacts.puter.com/\" />\n",
+      "new": "",
+      "why": "Remove the canonical link to contacts.puter.com; this copy is not that site."
+    },
+    {
+      "file": "src/contacts/index.html",
+      "old": "    <!-- Privacy-friendly analytics by Plausible -->\n    <script async src=\"https://plausible.io/js/pa-P2qYwxML7xcGJkqsScQMv.js\"></script>\n    <script>\n      window.plausible =\n        window.plausible ||\n        function () {\n          (plausible.q = plausible.q || []).push(arguments);\n        };\n      plausible.init =\n        plausible.init ||\n        function (i) {\n          plausible.o = i || {};\n        };\n      plausible.init();\n    </script>\n",
+      "new": "",
+      "why": "Remove the Plausible analytics script and its stub: no third-party tracking, and the CSP would refuse the script anyway. track() is already a no-op without it."
+    },
+    {
+      "file": "src/contacts/src/ui/app.js",
+      "old": "          <button class=\"btn btn--soft btn--sm\" data-action=\"smart-add\" title=\"Smart add\" aria-label=\"Smart add\">${icons.sparkles}<span class=\"hide-sm\">Smart add</span></button>\n",
+      "new": "",
+      "why": "Hide the Smart add button: it needs Puter AI, which the bridge does not provide (ADR-057), so it could only report an error."
+    },
+    {
+      "file": "src/contacts/src/ui/app.js",
+      "old": "<span class=\"topbar__logo\"><img src=\"/icon.svg\"",
+      "new": "<span class=\"topbar__logo\"><img src=\"./icon.svg\"",
+      "why": "The top-bar logo used an absolute URL that would leave the app's path."
+    },
+    {
+      "file": "src/contacts/src/ui/smartadd.js",
+      "old": "export function openSmartAdd() {",
+      "new": "// Homestead: there is no AI backend; Smart add is not reachable from the UI.\nfunction refuseAi() {\n  return Promise.reject(new Error('AI is not available on Homestead'))\n}\n\nexport function openSmartAdd() {",
+      "why": "Defence in depth: the one place the app called Puter AI now refuses without any SDK call."
+    },
+    {
+      "file": "src/contacts/src/ui/smartadd.js",
+      "old": "    if (!window.puter || !window.puter.ai || typeof window.puter.ai.chat !== 'function') {\n      errorEl.textContent = 'AI is unavailable right now.'",
+      "new": "    if (true) {\n      errorEl.textContent = 'AI is not available on Homestead. Nothing you paste is sent anywhere.'",
+      "why": "If Smart add is ever reached it says so plainly and sends nothing."
+    },
+    {
+      "file": "src/contacts/src/ui/smartadd.js",
+      "old": "await window.puter.ai.chat(",
+      "new": "await refuseAi(",
+      "why": "Remove the Puter AI call from the built app."
+    },
+    {
+      "file": "src/contacts/src/main.js",
+      "old": "    email = (user && (user.email || user.username)) || ''",
+      "new": "    email = (user && user.email) || ''",
+      "why": "The bridge's user name is an opaque sign-in subject; do not show it in the account menu as a handle."
+    },
+    {
+      "file": "src/contacts/src/main.js",
+      "old": "if (import.meta.env.PROD && 'serviceWorker' in navigator && !isPuterApp()) {\n  window.addEventListener('load', () => {\n    navigator.serviceWorker.register('/sw.js').catch(() => {})",
+      "new": "if (import.meta.env.PROD && 'serviceWorker' in navigator) {\n  window.addEventListener('load', () => {\n    navigator.serviceWorker.register('./sw.js').catch(() => {})",
+      "why": "Register Homestead's service worker relative to the app's path, also in the app environment the bridge reports (offline page only)."
+    },
+    {
+      "file": "src/contacts/public/manifest.webmanifest",
+      "old": "  \"id\": \"/\",\n  \"start_url\": \"/\",\n  \"scope\": \"/\",",
+      "new": "  \"id\": \"./\",\n  \"start_url\": \"./\",\n  \"scope\": \"./\",",
+      "why": "Manifest URLs relative to the app's path."
+    },
+    {
+      "file": "src/contacts/public/manifest.webmanifest",
+      "old": "  \"icons\": [\n    { \"src\": \"/icon-48.png\", \"sizes\": \"48x48\", \"type\": \"image/png\" },\n    { \"src\": \"/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\", \"purpose\": \"any maskable\" },\n    { \"src\": \"/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"any maskable\" },\n    { \"src\": \"/icon.svg\", \"sizes\": \"any\", \"type\": \"image/svg+xml\" }\n",
+      "new": "  \"icons\": [\n    { \"src\": \"./icon-48.png\", \"sizes\": \"48x48\", \"type\": \"image/png\" },\n    { \"src\": \"./icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\", \"purpose\": \"any maskable\" },\n    { \"src\": \"./icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\", \"purpose\": \"any maskable\" },\n    { \"src\": \"./icon.svg\", \"sizes\": \"any\", \"type\": \"image/svg+xml\" }\n",
+      "why": "Icon URLs relative to the app's path."
+    },
+    {
+      "file": "src/contacts/public/manifest.webmanifest",
+      "old": "  \"screenshots\": [\n    { \"src\": \"/screenshots/desktop-1-overview.png\", \"sizes\": \"2560x1600\", \"type\": \"image/png\", \"form_factor\": \"wide\", \"label\": \"Browse contacts and read full details side by side\" },\n    { \"src\": \"/screenshots/desktop-2-favorites.png\", \"sizes\": \"2560x1600\", \"type\": \"image/png\", \"form_factor\": \"wide\", \"label\": \"Star the people you reach for most\" },\n    { \"src\": \"/screenshots/desktop-3-search.png\", \"sizes\": \"2560x1600\", \"type\": \"image/png\", \"form_factor\": \"wide\", \"label\": \"Find anyone instantly as you type\" },\n    { \"src\": \"/screenshots/desktop-4-editor.png\", \"sizes\": \"2560x1600\", \"type\": \"image/png\", \"form_factor\": \"wide\", \"label\": \"Edit contacts in a clean, structured form\" },\n    { \"src\": \"/screenshots/desktop-5-smartadd.png\", \"sizes\": \"2560x1600\", \"type\": \"image/png\", \"form_factor\": \"wide\", \"label\": \"Smart Add turns pasted text into a contact with AI\" },\n    { \"src\": \"/screenshots/mobile-1-browse.png\", \"sizes\": \"780x1688\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Your whole address book in your pocket\" },\n    { \"src\": \"/screenshots/mobile-2-detail.png\", \"sizes\": \"780x1688\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Every detail, one tap away\" },\n    { \"src\": \"/screenshots/mobile-3-search.png\", \"sizes\": \"780x1688\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Instant search on the go\" },\n    { \"src\": \"/screenshots/mobile-4-editor.png\", \"sizes\": \"780x1688\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Add and edit contacts anywhere\" },\n    { \"src\": \"/screenshots/mobile-5-smartadd.png\", \"sizes\": \"780x1688\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Smart Add, powered by Puter AI\" },\n    { \"src\": \"/screenshots/tablet-1-browse.png\", \"sizes\": \"1536x2048\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"A roomy view of your contacts on tablet\" },\n    { \"src\": \"/screenshots/tablet-2-detail.png\", \"sizes\": \"1536x2048\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Rich contact details with tags and notes\" },\n    { \"src\": \"/screenshots/tablet-3-search.png\", \"sizes\": \"1536x2048\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Search across names, companies and emails\" },\n    { \"src\": \"/screenshots/tablet-4-editor.png\", \"sizes\": \"1536x2048\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Create and edit with room to work\" },\n    { \"src\": \"/screenshots/tablet-5-smartadd.png\", \"sizes\": \"1536x2048\", \"type\": \"image/png\", \"form_factor\": \"narrow\", \"label\": \"Extract a contact from any pasted text\" }\n  ],\n",
+      "new": "",
+      "why": "Remove store screenshots (absolute URLs, install-dialog decoration only)."
+    },
+    {
+      "file": "src/contacts/src/main.js",
+      "old": "// The browser HTTP cache can otherwise hand back stale KV responses right after\n// a write (add a contact, reload, it's missing). Force no-store on Puter API\n// calls while leaving the static SDK on the CDN cacheable.\nconst nativeFetch = window.fetch.bind(window)\nwindow.fetch = function (input, init) {\n  try {\n    const url = typeof input === 'string' ? input : (input && input.url) || ''\n    if (/\\/\\/([^/]*\\.)?puter\\.(com|local)/i.test(url) && !url.includes('js.puter.com')) {\n      init = Object.assign({}, init, { cache: 'no-store' })\n    }\n  } catch (_e) {\n    /* fall through with the original init */\n  }\n  return nativeFetch(input, init)\n}\n\n",
+      "new": "",
+      "why": "Remove the wrapper that forced no-store on Puter API calls (it also names the hosted SDK origin, which the build refuses); the shim already sends every bridge request with no-store."
+    },
+    {
+      "file": "src/contacts/package.json",
+      "old": "\"build\": \"npm run test && vite build\",",
+      "new": "\"build\": \"vite build\",",
+      "why": "The image build does not run the upstream tests: they assert the unpatched Smart add and are run against the pristine tree instead (see the slice document)."
+    }
+  ],
+  "sdk_surface": {
+    "supported": [
+      "kv.get",
+      "kv.set",
+      "kv.del",
+      "kv.list",
+      "auth.isSignedIn",
+      "auth.getUser",
+      "auth.signIn",
+      "auth.signOut",
+      "env"
+    ],
+    "refused": [
+      "fs.getReadURL",
+      "kv.share",
+      "kv.unshare",
+      "kv.listShared",
+      "kv.listSharedByMe",
+      "perms.*",
+      "events.*",
+      "appID"
+    ],
+    "absent": [
+      "ui.contextMenu",
+      "ui.setWindowTitle",
+      "ui.parentApp",
+      "ui.hideWindow",
+      "ui.showWindow",
+      "ui.launchApp",
+      "ui.onItemsOpened",
+      "exit",
+      "args",
+      "auth.getProfilePicture"
+    ],
+    "disabled": {
+      "ai": "no AI backend",
+      "net": "no network bridge (S381 only)",
+      "sharing": "needs an exposure plan"
+    }
+  }
+}

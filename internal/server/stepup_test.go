@@ -41,18 +41,19 @@ func TestPublicNameStepUpMatrix(t *testing.T) {
 	for p := range publicStepUpRoutes {
 		peopleRoutes = append(peopleRoutes, p)
 	}
-	// The public list is exactly five People routes, all in the step-up list.
-	if len(peopleRoutes) != 5 {
-		t.Fatalf("public step-up routes = %d, want 5", len(peopleRoutes))
+	// ADR-054 adds the app-admin installation action to the five People routes and resume-admin.
+	if len(peopleRoutes) != 7 {
+		t.Fatalf("public step-up routes = %d, want 7", len(peopleRoutes))
 	}
 	for _, p := range peopleRoutes {
-		if stepUpRoutes[p] != stepUpBoundary || !strings.Contains(p, "/api/v1/people/") {
-			t.Errorf("%s is not a People step-up boundary route", p)
+		if stepUpRoutes[p] != stepUpBoundary || (!strings.Contains(p, "/api/v1/people/") && p != "POST /api/v1/catalog/{name}/install-admin" && p != "POST /api/v1/catalog/{name}/setup/resume-admin") {
+			t.Errorf("%s is not an approved step-up boundary route", p)
 		}
 	}
 	do := func(pattern string) *httptest.ResponseRecorder {
 		m, path := patternRequest(pattern)
 		path = strings.ReplaceAll(path, "{app}", "immich")
+		path = strings.ReplaceAll(path, "{name}", "immich")
 		return a.publicDo(dashPublic, m, path, cookie)
 	}
 
@@ -66,7 +67,7 @@ func TestPublicNameStepUpMatrix(t *testing.T) {
 	if _, err := a.app.Auth.MarkSteppedUp(sid, v); err != nil {
 		t.Fatal(err)
 	}
-	// Stepped up: the five People routes pass the boundary.
+	// Stepped up: the approved routes pass the boundary.
 	before := a.auditCount(t, "session.step-up.authorised", "ok")
 	for _, p := range peopleRoutes {
 		rec := do(p)
@@ -74,8 +75,8 @@ func TestPublicNameStepUpMatrix(t *testing.T) {
 			t.Errorf("%s stepped up was refused: %d %q", p, rec.Code, c)
 		}
 	}
-	if got := a.auditCount(t, "session.step-up.authorised", "ok"); got != before+5 {
-		t.Errorf("authorised audit entries grew by %d, want 5", got-before)
+	if got := a.auditCount(t, "session.step-up.authorised", "ok"); got != before+7 {
+		t.Errorf("authorised audit entries grew by %d, want 7", got-before)
 	}
 	// Every other step-up route is local-only on the public name (the link
 	// routes are refused earlier as public-host); the name never takes the

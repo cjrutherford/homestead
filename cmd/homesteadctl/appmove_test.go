@@ -73,3 +73,63 @@ func TestAppsMoveAndPathPublic(t *testing.T) {
 		t.Fatalf("public plan: %s", stdout)
 	}
 }
+
+// S471 (ADR-061): the move plan from a subdomain prints the old public
+// name's removals and says plainly that links to it stop working.
+func TestAppsMovePublicNamePlan(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/catalog/navidrome/move":
+			_, _ = w.Write([]byte(`{"app":"navidrome","offered":true,"from":"https://navidrome.lan/","path":"/apps/navidrome/","to":["https://homestead.lan/apps/navidrome/"],
+				"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/"}`))
+		case "POST /api/v1/catalog/navidrome/move/plan":
+			_, _ = w.Write([]byte(`{"app":"navidrome","route":"navidrome.lan","from":"https://navidrome.lan/","path":"/apps/navidrome/","to":["https://homestead.lan/apps/navidrome/"],
+				"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/",
+				"removes":["DNS: the proxied CNAME navidrome.example.com to the tunnel is deleted"],"stops":["https://navidrome.example.com/"],
+				"warnings":["Old bookmarks and links on https://navidrome.example.com/ stop working."],"digest":"m2"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	_, stdout, _ := invoke(t, []string{"--server", ts.URL, "apps", "move", "status", "navidrome"})
+	if !strings.Contains(stdout, "public: https://navidrome.example.com/ is removed and the app is published at https://homestead.example.com/apps/navidrome/ (no redirect)") {
+		t.Fatalf("status: %s", stdout)
+	}
+	_, stdout, _ = invoke(t, []string{"--server", ts.URL, "apps", "move", "plan", "navidrome"})
+	for _, want := range []string{"public address: https://navidrome.example.com/ is removed; the app answers publicly at https://homestead.example.com/apps/navidrome/",
+		"removed: DNS: the proxied CNAME navidrome.example.com", "stops working (no redirect): https://navidrome.example.com/",
+		"warning: Old bookmarks and links on https://navidrome.example.com/ stop working."} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("plan missing %q: %s", want, stdout)
+		}
+	}
+}
+
+// S479: a move that stopped before the old public name was removed shows
+// as unfinished, and its plan says nothing of the app changes.
+func TestAppsMoveFinishStatusAndPlan(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/catalog/navidrome/move":
+			_, _ = w.Write([]byte(`{"app":"navidrome","offered":true,"to":[],"finish":true,
+				"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/"}`))
+		case "POST /api/v1/catalog/navidrome/move/plan":
+			_, _ = w.Write([]byte(`{"app":"navidrome","route":"navidrome.lan","from":"https://navidrome.example.com/","path":"/apps/navidrome/","to":[],
+				"finish":true,"public_from":"https://navidrome.example.com/","public_to":"https://homestead.example.com/apps/navidrome/","digest":"f1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	_, stdout, _ := invoke(t, []string{"--server", ts.URL, "apps", "move", "status", "navidrome"})
+	if !strings.Contains(stdout, "move: unfinished; the old public name https://navidrome.example.com/ is still held") {
+		t.Fatalf("status: %s", stdout)
+	}
+	_, stdout, _ = invoke(t, []string{"--server", ts.URL, "apps", "move", "plan", "navidrome"})
+	if !strings.Contains(stdout, "finish: an earlier move stopped before https://navidrome.example.com/ was removed; nothing of the app changes") {
+		t.Fatalf("plan: %s", stdout)
+	}
+}

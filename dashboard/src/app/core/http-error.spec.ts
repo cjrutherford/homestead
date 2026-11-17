@@ -21,6 +21,13 @@ describe('httpErrorMessage', () => {
     );
   });
 
+  it('shows the server reason on 409 and 422, and the generic text without one', () => {
+    expect(httpErrorMessage(failure(422, 'domain must be a public name\n'), 'setup')).toBe(
+      'setup failed: domain must be a public name',
+    );
+    expect(httpErrorMessage(failure(422), 'setup')).toBe('setup failed (HTTP 422).');
+  });
+
   it('shows the server message on 400', () => {
     expect(httpErrorMessage(failure(400, 'bad json\n'), 'Login')).toBe(
       'The appliance rejected the request: bad json',

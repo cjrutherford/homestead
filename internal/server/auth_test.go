@@ -336,3 +336,32 @@ func TestPasswordTooLongIs422(t *testing.T) {
 		t.Fatalf("password = %d (%s)", rec.Code, rec.Body.String())
 	}
 }
+
+func TestIdentitySetupPendingUntilAdminExists(t *testing.T) {
+	srv, _ := authServer(t)
+	pending := func(srv *Server) (string, bool) {
+		rec := doJSON(t, srv, http.MethodGet, "/api/v1/identity", "", "")
+		var body struct {
+			State   string `json:"state"`
+			Pending bool   `json:"setup_pending"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		return body.State, body.Pending
+	}
+	if state, p := pending(srv); state != "UNCLAIMED" || p {
+		t.Fatalf("unclaimed identity = %s pending=%v, want UNCLAIMED false", state, p)
+	}
+	claimed := claimedAuthServer(t)
+	if state, p := pending(claimed); state != "CLAIMED" || !p {
+		t.Fatalf("claimed, no admin = %s pending=%v, want CLAIMED true", state, p)
+	}
+	rec := doJSON(t, claimed, http.MethodPost, "/api/v1/admins/setup", `{"username":"owner","password":"correct-horse-battery"}`, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("setup = %d: %s", rec.Code, rec.Body.String())
+	}
+	if state, p := pending(claimed); state != "CLAIMED" || p {
+		t.Fatalf("after setup = %s pending=%v, want CLAIMED false", state, p)
+	}
+}

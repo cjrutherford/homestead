@@ -207,6 +207,29 @@ func TestJobFlow(t *testing.T) {
 	}
 }
 
+func TestJobValidateServerDatabasePassword(t *testing.T) {
+	for _, kind := range []catalog.DatabaseKind{
+		catalog.DatabasePostgres, catalog.DatabaseMariaDB, catalog.DatabaseMySQL,
+	} {
+		manifest := scheduleManifest()
+		manifest.Database = &catalog.DatabaseBackup{
+			Service: "db", Kind: kind, Database: "photos", Username: "photos",
+		}
+		job := Job{
+			Manifest: manifest, Package: "photos",
+			Container: "photos-db", SrcRoot: t.TempDir(), DestRoot: t.TempDir(),
+		}
+		if err := job.Validate(); err == nil ||
+			!strings.Contains(err.Error(), string(kind)+" export needs a password") {
+			t.Fatalf("%s without password: err = %v", kind, err)
+		}
+		job.Password = "secret"
+		if err := job.Validate(); err != nil {
+			t.Fatalf("%s with password: %v", kind, err)
+		}
+	}
+}
+
 func fixedJobTime() time.Time {
 	return time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 }

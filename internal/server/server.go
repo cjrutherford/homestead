@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"homestead/internal/cert"
@@ -50,6 +51,9 @@ type versionResponse struct {
 // API plus a Unix-socket mux for root-only endpoints (S021).
 type Server struct {
 	addr string
+	// hasAdmin reports whether a first administrator exists; set by MountAuth
+	// so identity can say a claimed appliance is still waiting for one.
+	hasAdmin func() (bool, error)
 	// doctorProbes and doctorBudget are the live Doctor probes (S316).
 	doctorProbes func() []doctor.Probe
 	doctorBudget time.Duration
@@ -66,6 +70,12 @@ type Server struct {
 	// waiters); serve cancels it when the daemon shuts down.
 	bg       context.Context
 	bgCancel context.CancelFunc
+	// audits counts audit waiters still running, so a test can wait for
+	// the completion entry instead of racing the goroutine.
+	audits sync.WaitGroup
+	// catalogDir is the catalog MountCatalog serves; edge changes use it
+	// to keep apps' host allow-lists in step (S396).
+	catalogDir string
 	// craft is the verify-then-build pipeline (S279), set by MountCraft.
 	craft *craft.Pipeline
 	// files is the craft file proxy (S254), set by MountCraftFiles; the

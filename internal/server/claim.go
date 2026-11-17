@@ -13,7 +13,7 @@ import (
 // (S019; ADR-015). Identity is always available; claim redeems the
 // single-use console token and flips UNCLAIMED to CLAIMED:
 //
-//	GET  /api/v1/identity  {"state", "version"}
+//	GET  /api/v1/identity  {"state", "version", "setup_pending"?}
 //	POST /api/v1/claim     {"token"} -> 200 {"state": "CLAIMED"}
 //
 // Failures: 400 malformed or empty token, 401 unknown/expired token,
@@ -30,7 +30,18 @@ func (s *Server) handleIdentity(svc *claim.Service) http.HandlerFunc {
 			http.Error(w, "failed to read appliance state", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"state": state.String(), "version": version.Version})
+		body := map[string]any{"state": state.String(), "version": version.Version}
+		// A claimed appliance with no administrator yet is mid-setup: the
+		// owner redeemed the token but has not made the account. Say so, so
+		// a reload resumes the account step instead of reading "already set
+		// up". Only the fact is exposed; the account route is already public
+		// in this window (it needs the claim, not a session).
+		if state == claim.StateClaimed && s.hasAdmin != nil {
+			if has, err := s.hasAdmin(); err == nil && !has {
+				body["setup_pending"] = true
+			}
+		}
+		writeJSON(w, body)
 	}
 }
 

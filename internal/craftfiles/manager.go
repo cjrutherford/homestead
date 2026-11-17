@@ -618,6 +618,34 @@ func (m *Manager) unlink(ctx context.Context) error {
 	return m.renderYAML()
 }
 
+// MoveBaseURL points the existing link at the address Nextcloud moved to
+// (S400). Only the address changes: the account, folder and sealed
+// credential stay, so no password is asked for. It refuses unless the
+// link still holds from, so a link the owner changed in the meantime is
+// left alone.
+func (m *Manager) MoveBaseURL(from, to, actor string) error {
+	from, to = strings.TrimSuffix(from, "/"), strings.TrimSuffix(to, "/")
+	cur, ok, err := m.readLink()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotLinked
+	}
+	if cur.BaseURL == to {
+		return nil
+	}
+	if cur.BaseURL != from {
+		return fmt.Errorf("%w: the craft files link points at %s, not %s", ErrInput, cur.BaseURL, from)
+	}
+	if _, err := m.DB.Exec(`UPDATE craft_file_link SET base_url = ?, updated_at = ? WHERE id = 1`,
+		to, m.now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return fmt.Errorf("craftfiles: move link: %w", err)
+	}
+	m.audit(actor, "craftfiles.link.move", "ok", fmt.Sprintf("%s -> %s", from, to))
+	return m.renderYAML()
+}
+
 func boolInt(b bool) int {
 	if b {
 		return 1

@@ -13,6 +13,9 @@ type MyApp struct {
 	// Role is "owner", "user" or "admin".
 	Role string `json:"role"`
 	URL  string `json:"url"`
+	// LocalURL is always set; PublicURL only once the app is published.
+	LocalURL  string `json:"local_url"`
+	PublicURL string `json:"public_url,omitempty"`
 }
 
 // MyApps reads the signed-in owner's apps.

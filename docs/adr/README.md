@@ -107,3 +107,15 @@ Conformance is checked automatically by `tests/test_s001_adr_framework.py`.
 | ADR-048 | Approved App Setup Runs on the Appliance; Tunnel Setup Issues the Public Certificate | Accepted |
 | ADR-049 | People Administration on the Public Dashboard; Authentik Recovery Links | Accepted |
 | ADR-050 | An Apps Page for Everyone Who Signs In; Administration Moves to /admin | Accepted |
+| ADR-051 | Catalog Integration Metadata Is Advisory | Accepted |
+| ADR-052 | Secret Entrypoint Export and OIDC Client Actuation | Accepted |
+| ADR-053 | Everything Application Bridge | Accepted |
+| ADR-054 | Explicit app access decisions during installation | Accepted |
+| ADR-055 | Authentik forward-auth for Navidrome and Uptime Kuma | Accepted |
+| ADR-056 | Community container image trust policy | Accepted |
+| ADR-057 | Everything apps as catalog packages | Accepted |
+| ADR-058 | Everything SDK: sharing, read links, net and events | Accepted |
+| ADR-059 | No manual first run for any catalog app | Accepted |
+| ADR-060 | Single-origin apps redirect their LAN names to the public name | Accepted |
+| ADR-061 | Public apps at a subpath of the dashboard's name | Accepted |
+| ADR-062 | One Shared Authentik Gate for Apps at a Subpath | Accepted |

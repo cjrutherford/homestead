@@ -269,7 +269,9 @@ homesteadctl logout                          # revokes it and deletes the stored
 One session store (ADR-004), two transports (ADR-020):
 
 - `POST /api/v1/sessions` returns `{token, csrf_token, expires_at}` and
-  sets two cookies: `homestead_session` (the same token; `HttpOnly`,
+  sets two cookies: `homestead_session` (the same token; over TLS the names
+  are `__Host-homestead_session` and `__Host-homestead_csrf`, S470, and the
+  daemon reads only the names that fit the request's scheme; `HttpOnly`,
   `SameSite=Strict`, `Path=/`, `Secure` when the request arrived over TLS
   or via a proxy sending `X-Forwarded-Proto: https`) and `homestead_csrf`
   (the per-session CSRF token; same attributes but readable by script).
@@ -384,6 +386,50 @@ protocols upstream supports, Authentik itself unsupported.
   touches administrator identities or sessions, and every plan
   carries the boundary in the record — Homestead administrator
   login and socket recovery stay local, only app logins change.
+
+## Secret delivery to plaintext-variable images (S342)
+
+- ADR-021 delivers every secret as a 0600 file under the stack
+  directory. Images with no `*_FILE` input cannot read one, so a
+  manifest may mark a consumer `Export: true` (ADR-052): the `*_FILE`
+  variable keeps carrying the path, and a generated
+  `secret-entrypoint.<service>.sh` exports the value into the same name
+  without the suffix at start, unsets the path variable, and `exec`s
+  the image's declared `Entrypoint` plus `Command`.
+- Exporting requires a declared `Entrypoint`. Validation refuses a
+  missing entrypoint, a variable without the `_FILE` suffix, an export
+  target the manifest also sets plainly, a `URI` consumer, and two
+  secrets exporting the same variable on one service.
+- The script holds paths, never values, is written 0755 beside
+  `compose.yaml`, and is bind-mounted read-only at
+  `/homestead/secret-entrypoint.sh`. An unreadable file fails the start
+  with a named error instead of running the app unconfigured.
+- The value then exists in the container's own environment, which is the
+  ADR-052 trade. Every other guarantee holds: no value in Compose YAML,
+  generated scripts, secret listings, audit records, drift reports, or
+  exports. Prefer `_FILE` delivery wherever an image offers it.
+
+## OIDC client actuation (S342)
+
+- `internal/identity` gains `ClientSpec`, `Client`, and `ClientManager`
+  beside `Provider`: read-only metadata stays separate from live
+  writes. `Authentik` implements both over its own API — flow lookup by
+  slug, existing-application reuse with a redirect refresh, provider and
+  application creation, orphan cleanup, and repeatable deletion. Errors
+  carry method, path, and status only, never a response body. The API
+  token lives in the secret store under `identity_<provider>_token`.
+- `internal/catalog` declares what a package needs:
+  `sso.oidc` names redirect paths, optional scopes, an optional slug,
+  and the two secrets that receive the issued credentials. Validation
+  requires an SSO class that admits SSO, the `oidc` protocol, declared
+  credential secrets, and a web endpoint; redirect URIs resolve against
+  the package's route host and refuse an empty one.
+- `ActivateOIDC` creates or refreshes the client and stores the issued
+  id and secret as `app_<package>_<name>` rows, delivered through the
+  supervisor above. It is idempotent: reuse keeps the stored secret and
+  refuses when the provider holds a client whose secret was never
+  stored, rather than issuing a credential the app cannot read.
+  `DeactivateOIDC` removes both, repeatably.
 
 ## Bootstrap (S220)
 
@@ -694,7 +740,8 @@ homesteadctl backup unschedule --package jellyfin
   without Homestead: `age -d -i identity.txt X.tar.age | tar -x`
   (database files: `age -d -i identity.txt X.sql.age > X.sql`). Tests:
   `go test ./internal/backup` runs a real `age` CLI check when `age` is
-  on PATH; set `HOMESTEAD_REQUIRE_AGE=1` to fail instead of skip when it
+  on PATH; set `HOMESTEAD_REQUIRE_AGE=1` (or list `age` in
+  `HOMESTEAD_REQUIRE_TOOLS`, S506) to fail instead of skip when it
   is missing. `scripts/acceptance.sh` (`make acceptance`) requires `age`
   (installed by `scripts/bootstrap.sh`) and runs that test with the
   variable set, so acceptance fails closed. SQLite exports use tmpfs
@@ -792,6 +839,10 @@ homesteadctl backup unschedule --package jellyfin
   executed literally by `internal/backup/runbook_test.go` (real `age` and
   `tar`, fake `docker`); the test skips without `age` and fails with
   `HOMESTEAD_REQUIRE_AGE=1`, which `scripts/acceptance.sh` sets.
+  `HOMESTEAD_REQUIRE_TOOLS` (a comma list or `all` of `node`, `minisign`,
+  `age`, `nft`, `caddy`, `php`) does the same for every tool-dependent test,
+  through `internal/testtools` and `tests/_tools.py`; CI sets it, and
+  `HOMESTEAD_REQUIRE_AGE` stays as an alias for `age`.
 
 - Wire format: schedule records are snake_case JSON (`package`,
   `interval_seconds`, `retain`, `enabled`, `actor`, `updated_at`),
@@ -2106,15 +2157,158 @@ the first with SQLite as the default database. The Immich package (S171) in
 `catalog/` is the third curated application with official release
 pins across four services (internal ones carrying no endpoint),
 declared requirements, exposure, and backup paths. Services without
-endpoints serve nothing routable by construction. The base suite (S172), also in
+endpoints serve nothing routable by construction. Catalog integration metadata (S341) lives in
+`internal/catalog/integrations.go`: manifests declare `identity`,
+`library`, `handoff` and `companion` relationships, levels are derived
+from the kind (never authored), and the loader enforces cross-package
+gates — shipped targets, providers this build drives
+(`identity.Builtins`), bulk paths on both sides of a library pair, and no
+identity declaration on an SSO-unsupported package. The detail response
+resolves levels and target titles under `Works`, `homesteadctl apps show`
+prints them, and the dashboard package page renders "Works with". Plan
+notes flag declared handoff targets that are not installed. The contract
+is documented in `docs/CATALOG_INTEGRATION.md`; ADR-051 records that the
+metadata is advisory, never actuation. The base suite (S172), also in
 `internal/catalog`, resolves the curated bundle in install order with joint
 grading: per-package verdicts plus combined memory footprints and cross-member
-port collisions naming both owners. The Authentik package (S201) in
+port collisions naming both owners. Catalog bundles (S344) generalize that
+into four curated profiles — starter, family, media, full — where membership
+is curated intent, not a promise that every package ships today: a member the
+catalog does not yet carry is reported as missing instead of silently dropped.
+`CheckBundle` grades combined memory and summed per-class storage against one
+host and fails on missing host data rather than passing on it; per-package
+verdicts, ports and exposure stay install-time concerns, since container
+ports live on separate networks and routes never publish them. `GET /api/v1/catalog/bundles` serves the
+graded profiles, `homesteadctl apps bundles` prints them, and the dashboard
+catalog page lists them above the package list. The Authentik package (S201) in
 `catalog/` is the fourth curated application following the official
 compose pins (server, worker, postgres) with internal services
 carrying no endpoint: the first manifest declaring a Postgres
 database export for backup, with credentials wiring post-install
-through configuration. The backup contract (S180),
+through configuration. The Vaultwarden package (S345) in `catalog/` is the
+first Wave 1 application: one container on application storage with owner
+signup open, the administrative page deliberately off (no generated
+`ADMIN_TOKEN`), and `DOMAIN` following the routed host through
+`{{route_host}}` so passkeys and invitation links match the browser URL.
+Exposure recommends local with an explicit widened-access warning, and the
+manifest declares optional OIDC with an Authentik identity integration for
+the SSO wizard. The Paperless-ngx package (S346) in `catalog/` is the first
+three-service Wave 1 application: `webserver` on the pinned GHCR image,
+Postgres 18 for metadata, and Valkey 9 for the task queue. Its image reads
+only plaintext credentials, so the Django key, database password, and
+first-run admin password travel as 0600 files and the generated supervisor
+exports them before exec'ing the image's own `/init` (s6-overlay); the
+manifest therefore names `/init` as the entrypoint and adds no command.
+All four image volumes (data, media, consume, export) are declared, `data`
+and `media` are backup paths, the consumer inbox sits on bulk storage for
+Nextcloud external storage, OCR defaults to `eng` as a configure value, and
+`PAPERLESS_URL` follows the routed HTTPS host. The Gitea package (S347) in
+`catalog/` is the private forge: one container whose `GITEA__section__KEY`
+variables render `app.ini` at every start with the installer locked, so no
+file inside the container is edited. `ROOT_URL` follows the routed HTTPS
+host with a trailing slash, `DISABLE_SSH` and `START_SSH_SERVER` keep v1
+HTTPS-only, registration stays open until the owner creates the first
+(administrator) account, sign-in is required to view repositories, and a
+`sqlite` database export backs up `data/gitea/gitea.db` with `VACUUM INTO`
+instead of copying a live file. Gitea generates its signing keys into the
+data volume, so the manifest declares no secret and no supervisor.
+The FreshRSS package (S348) in `catalog/` is the feed reader: the plain
+Debian `freshrss/freshrss` tag because the alpine variant has no
+`mod_auth_openidc`, so the optional OIDC declaration holds. `CRON_MIN`
+installs the image's refresh job and `LISTEN` pins Apache to
+`0.0.0.0:80`; Homestead installs it at install (S445) with the image's CLI: the
+SQLite database and a default user named for the owner's Authentik
+username; no web installer is shown.
+Both writable directories (`data`, `extensions`) are declared on
+application storage as `www-data` (uid/gid 33), and only `data` is a
+backup path.
+The Linkding package (S349) in `catalog/` is the bookmark manager: the
+image declares no `ENTRYPOINT`, only `CMD ["./bootstrap.sh"]`, so the
+manifest names that script as the entrypoint and the supervisor execs it
+after exporting `LD_SUPERUSER_PASSWORD` from a 0600 file. The initial
+superuser (`admin`) is created once, `LD_CSRF_TRUSTED_ORIGINS` follows the
+routed HTTPS host, `/etc/linkding/data` holds the SQLite database and
+archives on application storage as `www-data`, and `data` is the backup
+path.
+The Mealie package (S350) in `catalog/` is the GHCR recipe manager: one
+container with SQLite on `/app/data`, `BASE_URL` following the routed
+HTTPS host, and signups closed. Mealie seeds the upstream-documented
+administrator (`changeme@example.com`); the first-run routine (S448)
+replaces its password and identity at install with a generated, revealable
+password for `homestead-admin@homestead.lan`, and the owner creates
+household accounts. Since S403 people
+also sign in through Authentik (the `env-oidc` adapter): the Authentik client secret and the administrator password are the declared
+secret is the Authentik client secret, read from `OIDC_CLIENT_SECRET_FILE`,
+and the image entrypoint runs unchanged. An install from before that adds
+just the secret's wiring to its `compose.yaml` when sign-in is applied.
+The Uptime Kuma package (S351) in `catalog/` closes Wave 1 with the
+documented monitoring exception: one container on `/app/data`, the
+administrator created in the app, `unsupported` SSO, and an exposure
+declaration that recommends local and sets `allowwider: false` so the
+monitor can never become a public status page. Its 1 GB memory floor is
+tested from both sides.
+The backup contract (S180) grew server engines (S352): `mariadb` and
+`mysql` join `postgres` as dump kinds, so BookStack and other PHP apps
+never copy a live database directory. Each engine's own client writes
+plain SQL to `<database>.sql` (or `.sql.age`): `mariadb-dump` for
+MariaDB, `mysqldump` with `--set-gtid-purged=OFF` for MySQL. Both take
+one InnoDB-consistent snapshot with `--single-transaction --quick`, skip
+table locks and tablespace lookups (`--skip-lock-tables`,
+`--no-tablespaces`), connect over 127.0.0.1 so the password is really
+checked, and read the password from stdin into `MYSQL_PWD` inside the
+container shell, never argv. `PasswordSecret` now resolves for every
+server engine, so scheduled backups work; verification and rotation stay
+Postgres-only and both refuse clearly for the new engines rather than
+writing a secret the database has not accepted.
+The Audiobookshelf package (S353) in `catalog/` opens Wave 2 with the
+pinned GHCR audiobook and podcast server. The image's own defaults
+(`CONFIG_PATH=/config`, `METADATA_PATH=/metadata`, port 80) need no
+environment override; `/config` (SQLite) and `/metadata` (covers, item
+metadata, logs) are application paths, and `/metadata/streams` is the
+transcode scratch directory on bulk storage. A `sqlite` export names
+`config/absdatabase.sqlite` for consistent snapshots. The audiobook and
+podcast libraries are owner volumes with a host path under the bulk
+mount, never declarations, so a large library is shared with Nextcloud
+external storage without entering every backup. OIDC stays an in-app
+setting (no `oidc:` client), and the JWT signing secret is generated into
+the backed-up database.
+The Navidrome package (S354) in `catalog/` adds the local-auth music
+server. It reads the same bulk music directory Jellyfin can mount as an
+owner volume, never a declaration; `/data` holds the SQLite database
+(users, playlists, play counts, generated JWT secrets) on application
+storage with a `sqlite` export, and `ND_CACHEFOLDER=/cache` moves the
+regenerable artwork and transcode cache to bulk. The first visit creates
+the administrator in the app, so no secret is declared; SSO is
+`unsupported` as the documented local-auth exception, and the reverse-
+proxy header path stays off until the edge injects a trusted identity
+header. The image declares `/music` as a volume, so `knownImageVolumes`
+marks it as an owner mount while still checking every other volume.
+The Komga package (S355) in `catalog/` adds the comic and manga server.
+`/config` holds three WAL SQLite databases (main, tasks, sessions), the
+Lucene index, fonts, logs, and any owner `application.yml`; it is
+application storage and the backup path, with a `sqlite` export of
+`config/database.sqlite` authoritative for the main database. The comics
+library is a bulk owner volume, never a declaration, so a large collection
+is referenced rather than copied. The image sets no maximum heap, so
+`JAVA_TOOL_OPTIONS=-Xmx768m` caps the JVM inside the declared 1 GiB; the
+first visit creates the administrator, and optional OIDC is a Spring
+client registration the owner puts in `application.yml`. Komga declares
+no `library` integration: that gate requires a bulk declaration, and its
+library is deliberately an owner volume.
+The Calibre-Web Automated package (S356) in `catalog/` adds the e-book
+library with an ingest and conversion service. All three image volumes are
+declarations: `/config` holds `app.db` (users, settings, OIDC) and
+`cwa.db` (ingest settings) plus `processed_books` on application storage,
+with a `sqlite` export of `config/app.db`; `/calibre-library` holds the
+Calibre database and the books on bulk storage and is a backup path;
+`/cwa-book-ingest` is the transient drop folder on bulk, declared so
+Nextcloud can mount the same directory through the `library` integration.
+The image is built on the LinuxServer base and drops from root to `abc`,
+so `PUID`/`PGID` are 1000 and every declared directory carries the same
+owner. The first visit uses the app's documented default administrator,
+optional OIDC is configured in the admin panel with discovery metadata,
+and `cwa.db`/`metadata.db` are copied live under the one-export limit.
+The backup contract (S180),
 also in `internal/catalog`, lets entries declare database exports
 and consistency hooks: per-engine parameters with cross-engine
 fields refused, staged commands bounded and service-linked, and
@@ -2230,8 +2424,15 @@ manifest runs last with re-walked counts, and runner-backed
 execution fails fast. Image discovery (S190) in `internal/update`
 compares manifest pins against running images and filters Docker
 Hub listings to newer same-variant versions with numeric ordering;
-outages error instead of reading as current, and non-Hub images
-refuse loudly. Update planning (S191), also in `internal/update`,
+outages error instead of reading as current. GHCR discovery (S343)
+adds the token flow GitHub Container Registry requires: one anonymous
+pull token, then the tag listing with a bearer header, at most two
+pages. Registries Homestead does not support refuse by name, the plan
+records per-service provenance (registry, repository, whether it
+answered, and why not), and locally built craft images are marked as
+such, so a service with no registry update says why instead of reading
+as current. Version comparison tolerates the `v` prefix GHCR projects
+use. Update planning (S191), also in `internal/update`,
 reviews registry maxima against manifest pins with current
 services planning empty, flags backups with database-first reasons,
 lists affected services, and warns major version jumps with
@@ -5253,3 +5454,7 @@ sudo homesteadctl claim token          # the new owner's claim token
   `app.routes.ts` (its `PAGES` map must list each route and template), and
   rejects colour literals and raw shadows in every stylesheet except
   `tokens.css` and `fonts.css`, including component `styles`.
+
+### Audiobookshelf first-run (S384)
+
+The pinned Audiobookshelf image is probed on its container loopback. When it has no root user, Homestead creates `homestead-admin` with a sealed, revealable recovery password through the app’s initialization API and checks that local login succeeds. An existing root is left untouched; no new password is generated for it. This prerequisite does not itself enable Authentik sign-in.

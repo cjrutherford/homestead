@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,10 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"homestead/internal/appsso"
 	"homestead/internal/catalog"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
+	"homestead/internal/secret"
 	"homestead/internal/store"
 )
 
@@ -37,6 +40,13 @@ func appPublicRig(t *testing.T) (*Server, *store.Store, *fakeCloudflare, func() 
 	t.Helper()
 	srv, st, secrets := tunnelTestServer(t)
 	srv.MountAppPublic(st, secrets, filepath.Join("..", "..", "catalog"))
+	return appPublicRigOn(t, srv, st, secrets)
+}
+
+// appPublicRigOn is appPublicRig over a server that already has
+// MountAppPublic.
+func appPublicRigOn(t *testing.T, srv *Server, st *store.Store, secrets *secret.Store) (*Server, *store.Store, *fakeCloudflare, func() []string) {
+	t.Helper()
 	// The setup wizard's domain resolves to the zone (S328/S329).
 	srv.appPublic.setupZone = func() (string, string) { return "cloudflare", "example.com" }
 	cf := newFakeCloudflare(t)
@@ -207,6 +217,7 @@ func TestAppPublicAddRemove(t *testing.T) {
 	if len(routes) != 1 {
 		t.Fatalf("routes = %v", routes)
 	}
+	srv.waitAudits()
 	for _, action := range []string{"app.public.add", "app.public.remove"} {
 		var n int
 		if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = ?`, action).Scan(&n); err != nil || n != 1 {
@@ -275,8 +286,7 @@ func TestAppPublicAdoptedTunnelZone(t *testing.T) {
 	}
 }
 
-// S312: a public app name two levels deep plans with a certificate
-// warning, never a refusal, and the status shows the lamp.
+// Publication requires readable certificate state; status remains best effort.
 func TestAppPublicCertificateCoverage(t *testing.T) {
 	srv, st, cf, _ := appPublicRig(t)
 	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
@@ -284,19 +294,12 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 		t.Fatalf("one level: %+v", plan)
 	}
 	cf.denyCerts = true
-	plan = planAppPublic(t, srv, map[string]any{"enabled": true, "hostname": "photos.example.com"})
-	if plan.Coverage[0].Checked || !strings.Contains(strings.Join(plan.Warnings, " "), router.CertificatePermission) {
-		t.Fatalf("unreadable: %+v", plan)
-	}
-	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply",
-		map[string]any{"enabled": true, "hostname": "photos.example.com", "digest": plan.Digest})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("apply: %d %s", recorder.Code, recorder.Body.String())
-	}
-	if op := waitOperation(t, st, recorder.Body.Bytes()); op.Status != operation.StatusSucceeded {
-		t.Fatalf("apply op = %s: %s", op.Status, op.Error)
+	recorder := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", map[string]any{"enabled": true, "hostname": "photos.example.com"})
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "cannot confirm photos.example.com is covered") {
+		t.Fatalf("unreadable certificates must plan with a warning: %d %s", recorder.Code, recorder.Body.String())
 	}
 	cf.denyCerts = false
+	applyAppPublic(t, srv, st, true, plan.Digest)
 	recorder = serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/immich/public", nil)
 	var status struct {
 		Coverage []publicNameCoverage `json:"coverage"`
@@ -304,7 +307,7 @@ func TestAppPublicCertificateCoverage(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if len(status.Coverage) != 1 || status.Coverage[0].Hostname != "photos.example.com" || !status.Coverage[0].Covered || !status.Coverage[0].Checked {
+	if len(status.Coverage) != 1 || status.Coverage[0].Hostname != "immich.example.com" || !status.Coverage[0].Covered || !status.Coverage[0].Checked {
 		t.Fatalf("status coverage = %+v", status.Coverage)
 	}
 }
@@ -476,10 +479,11 @@ func planAppPublicFor(t *testing.T, srv *Server, app string, body map[string]any
 // after it moves to its path, and the panel says so instead of asking for
 // a name. A name with a path, or the dashboard's own public name, is
 // refused with the way to publish under the dashboard's name.
+// (Jellyfin stands in for a craft app here: the craft packages are publish: never since ADR-061.)
 func TestAppPublicPointsToTheMove(t *testing.T) {
 	srv, st, _, _ := appPublicRig(t)
-	installApp(t, st, "cadcraft", docker.Route{Host: "cadcraft.lan", Target: docker.Target{Host: "cadcraft", Port: 8080},
-		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "cadcraft"})
+	installApp(t, st, "jellyfin", docker.Route{Host: "jellyfin.lan", Target: docker.Target{Host: "jellyfin", Port: 8080},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal, CraftApp: "jellyfin"})
 	installHostApp(t, st, "nextcloud", "nextcloud", 80)
 	set, _ := loadEdgeRoutes(st)
 	for i := range set.Routes {
@@ -490,12 +494,12 @@ func TestAppPublicPointsToTheMove(t *testing.T) {
 	if err := saveEdgeRoutes(st, set); err != nil {
 		t.Fatal(err)
 	}
-	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/cadcraft/public", nil)
+	rec := serveRequest(t, srv, http.MethodGet, "/api/v1/catalog/jellyfin/public", nil)
 	var status appPublicStatus
 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Available || !strings.Contains(status.Reason, "Move it to /apps/cadcraft/ first") || status.Proposed != "" {
+	if status.Available || !strings.Contains(status.Reason, "Move it to /apps/jellyfin/ first") || status.Proposed != "" {
 		t.Fatalf("status = %+v", status)
 	}
 	for _, c := range []struct {
@@ -504,7 +508,7 @@ func TestAppPublicPointsToTheMove(t *testing.T) {
 		code int
 		want string
 	}{
-		{"cadcraft", map[string]any{"enabled": true, "hostname": "homestead.example.com"}, http.StatusUnprocessableEntity, "Move it to /apps/cadcraft/ first"},
+		{"jellyfin", map[string]any{"enabled": true, "hostname": "homestead.example.com"}, http.StatusUnprocessableEntity, "Move it to /apps/jellyfin/ first"},
 		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,
 			"is not a public name: a public name is a host name only"},
 		{"nextcloud", map[string]any{"enabled": true, "hostname": "homestead.example.com/apps/nextcloud"}, http.StatusBadRequest,
@@ -563,5 +567,195 @@ func TestBelowZone(t *testing.T) {
 		if got := belowZone(host, "example.com"); got != want {
 			t.Errorf("belowZone(%q) = %d, want %d", host, got, want)
 		}
+	}
+}
+
+// Anticipation is private and projects only the sign-in state: the approved
+// digest must still match the actual public plan after sign-in completes.
+func TestAppPublicAnticipatedSignIn(t *testing.T) {
+	for _, change := range []string{"none", "tunnel", "dns", "certificate", "certificate-pack", "hostname"} {
+		t.Run(change, func(t *testing.T) {
+			srv, st, cf, systemctl := appPublicRig(t)
+			uninstallImmich(t, st)
+			on := true
+			req := appPublicRequest{Enabled: &on, BeforeInstall: true, Route: "immich.lan", Hostname: "immich.example.com"}
+			beforeRoutes, err := loadEdgeRoutes(st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := srv.appPublic.buildAnticipatedSignInPlan(context.Background(), "immich", req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			afterRoutes, err := loadEdgeRoutes(st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fmt.Sprint(beforeRoutes) != fmt.Sprint(afterRoutes) || len(systemctl()) != 0 || len(cf.records) != 0 {
+				t.Fatal("planning mutated runtime state")
+			}
+			for _, request := range cf.requests {
+				if !strings.HasPrefix(request, "GET ") {
+					t.Fatalf("planning made mutating request: %s", request)
+				}
+			}
+			installHostApp(t, st, "immich", "server", 2283)
+			req.BeforeInstall = false
+			req.Digest = plan.Digest
+			if _, err := srv.appPublic.start(context.Background(), "immich", req, "owner"); !errors.Is(err, errPlanChanged) {
+				t.Fatalf("anticipated digest accepted before sign-in: %v", err)
+			}
+			if err := (appsso.Records{DB: st.DB()}).Save(appsso.Record{Package: "immich", Adapter: catalog.AdapterImmich, ClientID: "homestead-immich"}); err != nil {
+				t.Fatal(err)
+			}
+			req.BeforeInstall = false
+			switch change {
+			case "tunnel":
+				if err := router.RecordRoute(st, router.TunnelRoute{Hostname: "other.example.com", TunnelID: "tid", Service: tunnelEntryService}, "homestead"); err != nil {
+					t.Fatal(err)
+				}
+			case "dns":
+				cf.addRecord("A", "immich.example.com", "192.0.2.1")
+			case "certificate":
+				cf.denyCerts = true
+			case "certificate-pack":
+				cf.certHosts = append(cf.certHosts, "immich.example.com")
+			case "hostname":
+				req.Hostname = "other.example.com"
+			}
+			actual, err := srv.appPublic.buildPlan(context.Background(), "immich", req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if change == "none" {
+				if actual.Digest != plan.Digest {
+					t.Fatalf("anticipated %s != actual %s", plan.Digest, actual.Digest)
+				}
+				return
+			}
+			req.Digest = plan.Digest
+			if _, err := srv.appPublic.start(context.Background(), "immich", req, "owner"); !errors.Is(err, errPlanChanged) {
+				t.Fatalf("changed %s: %v", change, err)
+			}
+		})
+	}
+}
+
+func TestAppPublicAnticipatedReviewEndpoint(t *testing.T) {
+	srv, st, cf, systemctl := appPublicRig(t)
+	uninstallImmich(t, st)
+	body := map[string]any{"enabled": true, "before_install": true, "anticipate_sign_in": true,
+		"route": "immich.lan", "hostname": "immich.example.com"}
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("review: %d %s", rec.Code, rec.Body.String())
+	}
+	var reviewed appPublicPlan
+	if err := json.Unmarshal(rec.Body.Bytes(), &reviewed); err != nil {
+		t.Fatal(err)
+	}
+	if reviewed.Digest == "" || reviewed.SignIn == "" || len(cf.records) != 0 || len(systemctl()) != 0 {
+		t.Fatalf("review was not a read-only post-sign-in plan: %+v", reviewed)
+	}
+	delete(body, "anticipate_sign_in")
+	pre := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", body)
+	if pre.Code != http.StatusOK {
+		t.Fatalf("pre-sign-in plan: %d %s", pre.Code, pre.Body.String())
+	}
+	var early appPublicPlan
+	if err := json.Unmarshal(pre.Body.Bytes(), &early); err != nil {
+		t.Fatal(err)
+	}
+	if early.Digest == reviewed.Digest {
+		t.Fatal("pre-sign-in digest must differ from reviewed post-sign-in digest")
+	}
+	for _, invalid := range []map[string]any{
+		{"enabled": true, "anticipate_sign_in": true, "route": "immich.lan"},
+		{"enabled": false, "before_install": true, "anticipate_sign_in": true},
+	} {
+		if got := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/plan", invalid); got.Code != http.StatusBadRequest {
+			t.Fatalf("invalid anticipation = %d %s", got.Code, got.Body.String())
+		}
+	}
+	if got := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/immich/public/apply", body); got.Code == http.StatusOK {
+		t.Fatal("uninstalled app was published")
+	}
+}
+
+func TestPublicationCertificateFingerprintCanonical(t *testing.T) {
+	base := router.ZoneCertificates{Packs: []router.CertificatePack{{ID: "one", Hosts: []string{"*.example.com", "other.example.com"}}}}
+	fingerprint := func(state router.ZoneCertificates) string {
+		t.Helper()
+		got, err := publicationCertificateState(state, "immich.example.com")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	want := fingerprint(base)
+	equivalent := router.ZoneCertificates{Packs: []router.CertificatePack{{ID: "unrelated", Hosts: []string{"else.example.net"}}, {ID: "one", Hosts: []string{"OTHER.EXAMPLE.COM.", "*.EXAMPLE.COM.", "*.example.com"}}}}
+	if got := fingerprint(equivalent); got != want {
+		t.Fatal("unrelated or normalized state changed fingerprint")
+	}
+	changed := router.ZoneCertificates{Packs: []router.CertificatePack{{ID: "replacement", Hosts: []string{"*.example.com"}}}}
+	if fingerprint(changed) == want {
+		t.Fatal("replacement pack was not bound")
+	}
+	changed = router.ZoneCertificates{Packs: []router.CertificatePack{{ID: "one", Hosts: []string{"*.example.com"}, Certificates: []router.PackCertificate{{ID: "new-leaf", Status: "active"}}}}}
+	if fingerprint(changed) == want {
+		t.Fatal("certificate replacement was not bound")
+	}
+	changed = base
+	changed.TotalTLS = true
+	if fingerprint(changed) == want {
+		t.Fatal("Total TLS was not bound")
+	}
+	if _, err := publicationCertificateState(router.ZoneCertificates{Packs: []router.CertificatePack{{Hosts: []string{"*.example.com"}}}}, "immich.example.com"); err == nil {
+		t.Fatal("pack without identity accepted")
+	}
+	// S397: unreadable state is a stable marker, distinct per kind and from readable.
+	un := fingerprint(router.ZoneCertificates{Unreadable: true})
+	tt := fingerprint(router.ZoneCertificates{TotalTLSUnreadable: true})
+	if un == want || tt == want || un == tt {
+		t.Fatal("readability flip did not change the digest")
+	}
+	if fingerprint(router.ZoneCertificates{Unreadable: true}) != un {
+		t.Fatal("unreadable marker is not stable")
+	}
+	if fingerprint(router.ZoneCertificates{TotalTLSUnreadable: true, Packs: base.Packs}) == tt {
+		t.Fatal("packs not bound while Total TLS unreadable")
+	}
+}
+
+// S397: plan then apply succeeds while certificates stay unreadable, and
+// the plan goes stale if readability changes.
+func TestAppPublicUnreadableCertificatesPlanAndApply(t *testing.T) {
+	srv, st, cf, _ := appPublicRig(t)
+	cf.denyCerts = true
+	plan := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if !strings.Contains(strings.Join(plan.Warnings, " "), "cannot confirm") {
+		t.Fatalf("no unreadable warning: %v", plan.Warnings)
+	}
+	cf.denyCerts = false
+	readable := planAppPublic(t, srv, map[string]any{"enabled": true})
+	if readable.Digest == plan.Digest {
+		t.Fatal("digest did not change when readability flipped")
+	}
+	cf.denyCerts = true
+	applyAppPublic(t, srv, st, true, plan.Digest)
+}
+
+func TestAppPublicOldDigestRejected(t *testing.T) {
+	srv, _, _, _ := appPublicRig(t)
+	on := true
+	req := appPublicRequest{Enabled: &on}
+	plan, err := srv.appPublic.buildPlan(context.Background(), "immich", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.CertificateState = ""
+	req.Digest = plan.digest()
+	if _, err := srv.appPublic.start(context.Background(), "immich", req, "owner"); !errors.Is(err, errPlanChanged) {
+		t.Fatalf("old digest accepted: %v", err)
 	}
 }

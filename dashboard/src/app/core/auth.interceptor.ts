@@ -6,6 +6,8 @@ import { SessionService } from '../auth/session.service';
 
 /** Name of the script-readable CSRF cookie set at login (ADR-020). */
 export const CSRF_COOKIE = 'homestead_csrf';
+/** Over TLS the daemon sets the __Host- name (ADR-061, S470). */
+export const HOST_CSRF_COOKIE = '__Host-homestead_csrf';
 export const CSRF_HEADER = 'X-CSRF-Token';
 
 /** Marks a 401 that is a wrong current password, not a dead session (S274). */
@@ -34,6 +36,11 @@ export function readCookie(name: string, source: string = document.cookie): stri
   return null;
 }
 
+/** The CSRF token under whichever name the daemon set for this scheme. */
+export function readCsrf(source: string = document.cookie): string | null {
+  return readCookie(HOST_CSRF_COOKIE, source) ?? readCookie(CSRF_COOKIE, source);
+}
+
 /**
  * Session transport for the dashboard (ADR-020, S256): same-origin requests
  * carry the HttpOnly session cookie by themselves; every mutating API call
@@ -46,7 +53,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const isApi = req.url.startsWith('/api/');
   if (isApi && MUTATING.has(req.method)) {
-    const csrf = readCookie(CSRF_COOKIE);
+    const csrf = readCsrf();
     if (csrf) {
       req = req.clone({ setHeaders: { [CSRF_HEADER]: csrf } });
     }

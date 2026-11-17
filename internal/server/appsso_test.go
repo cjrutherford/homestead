@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -154,5 +158,98 @@ func TestAppSignInPlanCarriesGroupsAndAccessReadBack(t *testing.T) {
 	}
 	if len(a.w.groups) != groups || len(a.w.bindings) != bindings {
 		t.Fatal("a read-back changed Authentik")
+	}
+}
+
+func TestSetupAnticipatedSignInMatchesPreviewAndRejectsChanges(t *testing.T) {
+	a := appSignInRig(t)
+	entries, err := catalog.Load(filepath.Join("..", "..", "catalog"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := entries.Get("immich")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := loadEdgeRoutes(a.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := set.Routes[0]
+	install := catalog.InstallPlan{Package: "immich", Routes: []docker.Route{route}}
+	preview := a.srv.appSignIn.preview(manifest, install, "immich.example.com")
+	if preview == nil || !preview.Offered {
+		t.Fatalf("preview: %+v", preview)
+	}
+	rec := setupRecord{App: "immich", Routes: []docker.Route{route}, Public: &setupPublicApproval{Route: string(route.Host), Hostname: "immich.example.com"}}
+	in, err := a.srv.appSignIn.setupInputs(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Digest != preview.Plan.Digest {
+		t.Fatalf("digest %s != preview %s", plan.Digest, preview.Plan.Digest)
+	}
+	after, err := loadEdgeRoutes(a.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, set) {
+		t.Fatalf("route published: %+v", after)
+	}
+	changed := route
+	changed.Target.Port++
+	if err := saveEdgeRoutes(a.st, docker.RouteSet{Routes: []docker.Route{changed}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.srv.appSignIn.startSetup(context.Background(), rec, preview.Plan.Digest, "token", "owner"); !errors.Is(err, errPlanChanged) {
+		t.Fatalf("stale route: %v", err)
+	}
+	if err := saveEdgeRoutes(a.st, set); err != nil {
+		t.Fatal(err)
+	}
+	spec, ok, err := a.srv.appSignIn.m.Config()
+	if err != nil || !ok {
+		t.Fatalf("SSO config: %v", err)
+	}
+	spec.AuthentikURL = "https://changed.example.com"
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.st.DB().Exec(`UPDATE sso_config SET spec = ? WHERE id = 1`, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.srv.appSignIn.startSetup(context.Background(), rec, preview.Plan.Digest, "token", "owner"); !errors.Is(err, errPlanChanged) {
+		t.Fatalf("stale issuer: %v", err)
+	}
+	spec.AuthentikURL = a.w.srv.URL
+	raw, _ = json.Marshal(spec)
+	if _, err := a.st.DB().Exec(`UPDATE sso_config SET spec = ? WHERE id = 1`, string(raw)); err != nil {
+		t.Fatal(err)
+	}
+	rec.Public.Hostname = "other.example.com"
+	if _, err := a.srv.appSignIn.startSetup(context.Background(), rec, preview.Plan.Digest, "token", "owner"); !errors.Is(err, errPlanChanged) {
+		t.Fatalf("stale public name: %v", err)
+	}
+	rec.Public.Hostname = "immich.example.com"
+	id, err := a.srv.appSignIn.startSetup(context.Background(), rec, preview.Plan.Digest, "token", "owner")
+	if err != nil {
+		t.Fatalf("start approved sign-in: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := a.srv.appSignIn.runner.Wait(ctx, id); err != nil {
+		t.Fatalf("wait for sign-in: %v", err)
+	}
+	after, err = loadEdgeRoutes(a.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, set) {
+		t.Fatalf("operation published route: %+v", after)
 	}
 }

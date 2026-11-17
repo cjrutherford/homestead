@@ -26,7 +26,7 @@ func TestPersonSessionReachesOnlyItsAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	allowed := map[string]bool{"GET /api/v1/me": true, "GET /api/v1/me/apps": true, "DELETE /api/v1/sessions": true}
+	allowed := map[string]bool{"GET /api/v1/me": true, "GET /api/v1/me/apps": true, "GET /guide/": true, "DELETE /api/v1/sessions": true}
 	hdr := func(r *http.Request) {
 		r.Header.Set("Authorization", "Bearer "+sess.Token)
 	}

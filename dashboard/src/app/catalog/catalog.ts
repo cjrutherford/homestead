@@ -5,9 +5,11 @@ import { forkJoin } from 'rxjs';
 import {
   ApiService,
   AppSecret,
+  BundleReport,
   CatalogManifest,
   PackageSummary,
   RevealedSecret,
+  WorksWith,
 } from '../core/api.service';
 import { registerPackageTitles } from '../core/operation-labels';
 import { StateMessage } from '../state/state-message';
@@ -17,6 +19,7 @@ import { Loading } from '../ui/loading';
 import { OperationProgress } from '../ui/operation-progress';
 import { appRoutes } from './app-routes';
 import { AppPublic } from './app-public';
+import { ReadLinks } from './read-links';
 import { AppMove } from './app-move';
 import { AppSignIn } from './app-sign-in';
 import { AppSetup } from './app-setup';
@@ -36,7 +39,7 @@ interface ConfigRow {
  * lives in the wizard (`install-wizard.ts`), not on this page.
  */
 @Component({
-  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, AppMove, AppSetup, Dialog, AppIcon],
+  imports: [OperationProgress, Loading, StateMessage, RouterLink, UninstallApp, AppSignIn, AppPublic, ReadLinks, AppMove, AppSetup, Dialog, AppIcon],
   selector: 'app-catalog',
   templateUrl: './catalog.html',
 })
@@ -50,6 +53,7 @@ export class Catalog implements OnInit {
   }
 
   protected readonly packages = signal<PackageSummary[]>([]);
+  protected readonly bundles = signal<BundleReport[]>([]);
   protected readonly selected = signal<CatalogManifest | null>(null);
   /** Counts finished moves, so the Public address section reads the new route. */
   protected readonly moves = signal(0);
@@ -87,6 +91,21 @@ export class Catalog implements OnInit {
   /** The managed app's local names (S295); empty until read or when it has none. */
   protected readonly localNames = signal<string[]>([]);
 
+  /**
+   * Groups resolved integrations by level in ADR-051 order (S341): the
+   * panel reads from co-installation inward, never in manifest order.
+   */
+  protected worksByLevel(works: WorksWith[] | undefined): { level: string; works: WorksWith[] }[] {
+    const groups: { level: string; works: WorksWith[] }[] = [];
+    for (const level of ['L1', 'L2', 'L3', 'L4']) {
+      const members = (works ?? []).filter((work) => work.Level === level);
+      if (members.length > 0) {
+        groups.push({ level, works: members });
+      }
+    }
+    return groups;
+  }
+
   ngOnInit(): void {
     this.reload();
   }
@@ -107,6 +126,12 @@ export class Catalog implements OnInit {
             : failure.message,
         );
       },
+    });
+    // Bundle capacity is advisory: a grading failure must not block the
+    // catalog list, so it stays silent here and the section stays empty.
+    this.api.catalogBundles().subscribe({
+      next: (bundles) => this.bundles.set(bundles),
+      error: () => this.bundles.set([]),
     });
   }
 

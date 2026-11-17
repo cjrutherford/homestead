@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"homestead/internal/appsso"
 )
 
 func appSignInStub(t *testing.T, bodies *[]map[string]any) string {
@@ -70,5 +73,17 @@ func TestAppsSignInStatusPlanApply(t *testing.T) {
 		if code, _, _ := invoke(t, append([]string{"--server", url}, args...)); code != exitUsage {
 			t.Fatalf("%v: %d", args, code)
 		}
+	}
+}
+
+// S399: a published app's status shows where visitors through the tunnel
+// sign in, next to the local address.
+func TestPrintAppSignInStatusPublicURL(t *testing.T) {
+	var out bytes.Buffer
+	printAppSignInStatus(&out, appsso.Status{Package: "immich", Enabled: true, Adapter: "immich",
+		SignInURL: "https://immich.lan/auth/login", PublicSignInURL: "https://immich.example.com/auth/login"})
+	if !strings.Contains(out.String(), "sign in at: https://immich.lan/auth/login") ||
+		!strings.Contains(out.String(), "public sign in at: https://immich.example.com/auth/login") {
+		t.Fatalf("output = %q", out.String())
 	}
 }

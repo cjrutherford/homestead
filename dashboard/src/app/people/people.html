@@ -40,6 +40,9 @@
             @if (v.read_error) {
               <app-state-message kind="warning" headline="Authentik could not be read, so access below is as Homestead recorded it." [detail]="v.read_error" actionLabel="Check again" (action)="load()" />
             }
+            @for (pp of v.purges ?? []; track pp.app + pp.username) {
+              <app-state-message kind="warning" headline="Sharing for {{ pp.username }} in {{ pp.app }} is not removed yet." detail="The app is not running. Homestead keeps trying and removes their shares and links once it runs." />
+            }
             <ul class="people-list">
               <li class="person person-owner">
                 <div class="person-who">
@@ -107,9 +110,10 @@
                     </div>
                   } @else if (person.status === 'missing') {
                     <div class="person-drift" role="group" [attr.aria-label]="'Missing: ' + person.display_name">
-                      <p>{{ person.username }} was deleted in Authentik. Recreate them with the access Homestead recorded (they get a new one-time sign-in link), or remove them from Homestead.</p>
+                      <p>{{ person.username }} was deleted in Authentik. Recreate them with the access Homestead recorded (a new one-time sign-in link by default, or a generated password shown once), or remove them from Homestead.</p>
                       <p class="person-actions">
                         <button type="button" class="primary" [disabled]="busy()" (click)="resolve(person, 'recreate')">Recreate</button>
+                        <button type="button" [disabled]="busy()" (click)="resolve(person, 'recreate', 'generated')">Recreate with a generated password</button>
                         <button type="button" class="danger" [disabled]="busy()" (click)="openConfirm(person, 'forget')">Remove from Homestead</button>
                       </p>
                     </div>
@@ -183,7 +187,7 @@
                 <span>{{ app }}</span>
                 <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
                   <option value="none">No access</option>
-                  <option value="user">Can open</option>
+                  <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
                   <option value="admin">App admin</option>
                 </select>
               </div>
@@ -234,7 +238,7 @@
               <span>{{ app }}</span>
               <select [attr.aria-label]="'Access to ' + app" [value]="formAccess[app] ?? 'none'" (change)="formAccess[app] = $any($event.target).value">
                 <option value="none">No access</option>
-                <option value="user">Can open</option>
+                <option value="user" [disabled]="adminOnly(app)" [hidden]="adminOnly(app)">Can open</option>
                 <option value="admin">App admin</option>
               </select>
             </div>
@@ -313,10 +317,24 @@
               Give this password to {{ d.who }}. Homestead does not keep it and cannot show it again.
             }
           </p>
+          @if (d.revealed.kind === 'link') {
+            <p><strong>On the local network</strong></p>
+          }
           <p class="reveal">
             <code class="reveal-value">{{ d.revealed.value }}</code>
-            <button type="button" class="quiet" (click)="copy(d.revealed.value)">Copy</button>
+            <button type="button" class="quiet" (click)="copy(d.revealed.value)">{{ d.revealed.kind === 'link' ? 'Copy local link' : 'Copy' }}</button>
           </p>
+          @if (d.revealed.kind === 'link') {
+            @if (d.revealed.public_value) {
+              <p><strong>Over the internet</strong></p>
+              <p class="reveal">
+                <code class="reveal-value">{{ d.revealed.public_value }}</code>
+                <button type="button" class="quiet" (click)="copy(d.revealed.public_value)">Copy public link</button>
+              </p>
+            } @else {
+              <p>There is no public link yet: it appears here once Authentik has a public address.</p>
+            }
+          }
           <div class="dialog-actions">
             <button type="button" class="primary" (click)="close()">I have it</button>
           </div>

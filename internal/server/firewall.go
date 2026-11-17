@@ -20,6 +20,8 @@ func (s *Server) MountFirewall(daemonPort int, configSvc *config.Service, resolv
 	if len(resolver) > 0 && resolver[0] != nil {
 		extra = resolver[0]
 	}
+	mode := func() bool { m, err := firewallMode(configSvc); return err == nil && m == firewall.ModeExternal }
+	firewallExternal.Store(&mode)
 	s.mux.HandleFunc("GET /api/v1/firewall/status", handleFirewallStatus(daemonPort, configSvc))
 	s.mux.HandleFunc("GET /api/v1/firewall/plan", handleFirewallPlan(daemonPort, configSvc, extra))
 	s.mux.HandleFunc("POST /api/v1/firewall/apply", handleFirewallApply(daemonPort, configSvc, extra))

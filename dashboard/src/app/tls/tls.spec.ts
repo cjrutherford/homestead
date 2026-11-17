@@ -54,6 +54,8 @@ describe('Tls', () => {
   afterEach(() => {
     // Renewal status loads with the plans; tests that do not care leave it unanswered.
     http.match('/api/v1/tls/renewal').forEach((r) => r.flush({ recorded_issuances: 0, summary: '', certificates: [] }));
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) => r.flush({ approvals: [] }));
+    http.match('/api/v1/tls/local-ca/leaves').forEach((r) => r.flush({ leaves: [] }));
     http.verify();
   });
 
@@ -74,6 +76,45 @@ describe('Tls', () => {
     box.dispatchEvent(new Event('change'));
     fixture.detectChanges();
   };
+
+  it('lists recorded approvals and local leaf certificates, with the CLI empty wording', () => {
+    load([]);
+    fixture.detectChanges();
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) => r.flush({ approvals: [] }));
+    http.expectOne('/api/v1/tls/local-ca/leaves').flush({ leaves: [] });
+    fixture.detectChanges();
+    expect(text()).toContain('No issuance approvals recorded.');
+    expect(text()).toContain('No local-only HTTPS routes use the internal CA.');
+  });
+
+  it('shows approvals and leaves in tables', () => {
+    load([]);
+    http.match('/api/v1/tls/issuance/approvals').filter((r) => r.request.method === 'GET').forEach((r) =>
+      r.flush({
+        approvals: [
+          {
+            certificate: 'www',
+            digest: 'abc123',
+            actor: 'owner',
+            agreed_terms: true,
+            confirmed_production: false,
+            approved_at: '2026-10-19T19:18:00Z',
+            plan: plan(),
+          },
+        ],
+      }),
+    );
+    http.expectOne('/api/v1/tls/local-ca/leaves').flush({
+      leaves: [{ host: 'app.lan', cert_name: 'c', status: 'valid', not_after: '2027-01-02T03:04:00Z' }],
+    });
+    fixture.detectChanges();
+    expect(text()).toContain('owner');
+    expect(text()).toContain('19 Oct 2026, 19:18 UTC');
+    expect(text()).toContain('abc123');
+    expect(text()).toContain('app.lan');
+    expect(text()).toContain('2 Jan 2027, 03:04 UTC');
+    expect(fixture.nativeElement.querySelector('a[href="/admin/trust"]')).not.toBeNull();
+  });
 
   it('shows the plan preview with placement and the key mode', () => {
     load([plan()]);
@@ -102,7 +143,7 @@ describe('Tls', () => {
     check('terms of service');
     expect(button('Approve plan').disabled).toBe(false);
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body).toEqual({
       certificate: 'www',
       digest: 'abc123',
@@ -125,7 +166,7 @@ describe('Tls', () => {
     check('production certificate authority');
     expect(button('Approve plan').disabled).toBe(false);
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body.confirm_production).toBe(true);
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });
@@ -264,7 +305,7 @@ describe('Tls', () => {
     check('terms of service');
     check('I will renew this certificate myself');
     button('Approve plan').click();
-    const req = http.expectOne('/api/v1/tls/issuance/approvals');
+    const req = http.expectOne((r) => r.method === 'POST' && r.url === '/api/v1/tls/issuance/approvals');
     expect(req.request.body.renewal).toBe('manual');
     req.flush({});
     http.expectOne('/api/v1/tls/issuance/plans').flush({ plans: [] });

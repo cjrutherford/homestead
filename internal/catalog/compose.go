@@ -80,6 +80,10 @@ type Generation struct {
 	// without the trailing slash. It fills RoutePathToken, and
 	// RouteURLToken becomes https://<route host><path>.
 	RoutePaths map[string]string
+	// PublicHosts maps a routed service to its public hostname when the
+	// app is published on the tunnel at a name of its own (S407). It
+	// fills AppURLToken; a service with no entry gets its local address.
+	PublicHosts map[string]string
 }
 
 // RouteHostToken in a service environment value is replaced with the
@@ -101,6 +105,43 @@ const RoutePathToken = "{{route_path}}"
 // RouteURLToken is replaced with the app's address: https://<route
 // host><route path>, e.g. https://homestead.lan/apps/nextcloud.
 const RouteURLToken = "{{route_url}}"
+
+// AppURLToken is replaced with the address the app should build its own
+// links on (S407): https://<public hostname> once the app is published
+// at a public name of its own, else the same as RouteURLToken. Apps that
+// take a single base URL (Mealie's BASE_URL, Vaultwarden's DOMAIN) use
+// it so a sign-in that starts on the public name returns there. Apps
+// served by path keep the local base URL (see docs/DEFERRED.md).
+const AppURLToken = "{{app_url}}"
+
+// routeTokens lists every token a service environment value may carry.
+var routeTokens = []string{RouteHostToken, RouteNamesToken, RoutePathToken, RouteURLToken, AppURLToken}
+
+func usesRouteToken(value string) bool {
+	for _, token := range routeTokens {
+		if strings.Contains(value, token) {
+			return true
+		}
+	}
+	return false
+}
+
+// RenderRouteTokens fills every route token in value. public is the
+// app's public hostname, or "" while it has none.
+func RenderRouteTokens(value, host string, names []string, path, public string) string {
+	if len(names) == 0 {
+		names = []string{host}
+	}
+	appURL := "https://" + host + path
+	if public != "" {
+		appURL = "https://" + public
+	}
+	value = strings.ReplaceAll(value, AppURLToken, appURL)
+	value = strings.ReplaceAll(value, RouteURLToken, "https://"+host+path)
+	value = strings.ReplaceAll(value, RoutePathToken, path)
+	value = strings.ReplaceAll(value, RouteHostToken, host)
+	return strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
+}
 
 // validate checks generation against the manifest: known services
 // only, sane ports and volumes, known networks, no duplicates.
@@ -183,17 +224,18 @@ type composeTmpfs struct {
 // deterministic container names, restart unless stopped, and only the
 // sections generation was told about.
 type composeService struct {
-	Image     string   `yaml:"image"`
-	Container string   `yaml:"container_name"`
-	Restart   string   `yaml:"restart"`
-	Command   []string `yaml:"command,omitempty"`
+	Image      string   `yaml:"image"`
+	Container  string   `yaml:"container_name"`
+	Restart    string   `yaml:"restart"`
+	Entrypoint []string `yaml:"entrypoint,omitempty"`
+	Command    []string `yaml:"command,omitempty"`
 	// Environment carries plain manifest variables and the in-container
 	// PATHS of secret files; never a secret value (ADR-021).
-	Environment map[string]string `yaml:"environment,omitempty"`
-	Secrets     []string          `yaml:"secrets,omitempty"`
-	Ports       []string          `yaml:"ports,omitempty"`
-	Volumes     []composeVolume   `yaml:"volumes,omitempty"`
-	Networks    []string          `yaml:"networks,omitempty"`
+	Environment map[string]string  `yaml:"environment,omitempty"`
+	Secrets     []composeSecretRef `yaml:"secrets,omitempty"`
+	Ports       []string           `yaml:"ports,omitempty"`
+	Volumes     []composeVolume    `yaml:"volumes,omitempty"`
+	Networks    []string           `yaml:"networks,omitempty"`
 }
 
 // composeNetwork renders one top-level network: external Homestead
@@ -225,6 +267,9 @@ type StackFiles struct {
 	// SecretFiles names the secret files the document references
 	// (metadata only); WriteStack materializes them from the store.
 	SecretFiles []SecretFile
+	// EntrypointScripts names the supervisor scripts a document mounts
+	// (S342); WriteStack writes them beside compose.yaml.
+	EntrypointScripts []EntrypointScript
 	// Images lists the service images the stack runs, in service order
 	// (S279 uses it to find locally built craft images).
 	Images []string
@@ -288,24 +333,26 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			}
 		}
 		rendered.Environment, rendered.Secrets = serviceSecretWiring(manifest, name)
+		if serviceEntrypoint(manifest, name) != nil {
+			rendered.Entrypoint = []string{EntrypointName}
+			args := append([]string{}, serviceEntrypoint(manifest, name)...)
+			args = append(args, commands[name]...)
+			rendered.Command = args
+			rendered.Volumes = append(rendered.Volumes, composeVolume{
+				Type: "bind", Source: "./" + EntrypointFile(name), Target: EntrypointName, ReadOnly: true,
+				Bind: &composeBind{CreateHostPath: false},
+			})
+		}
 		for key, value := range rendered.Environment {
-			if strings.Contains(value, RouteHostToken) || strings.Contains(value, RouteNamesToken) ||
-				strings.Contains(value, RoutePathToken) || strings.Contains(value, RouteURLToken) {
+			if usesRouteToken(value) {
 				host := generation.RouteHosts[name]
 				if host == "" {
 					// No route serves this service: there is no name to trust.
 					delete(rendered.Environment, key)
 					continue
 				}
-				names := generation.RouteNames[name]
-				if len(names) == 0 {
-					names = []string{host}
-				}
-				path := generation.RoutePaths[name]
-				value = strings.ReplaceAll(value, RouteURLToken, "https://"+host+path)
-				value = strings.ReplaceAll(value, RoutePathToken, path)
-				value = strings.ReplaceAll(value, RouteHostToken, host)
-				rendered.Environment[key] = strings.ReplaceAll(value, RouteNamesToken, strings.Join(names, " "))
+				rendered.Environment[key] = RenderRouteTokens(value, host, generation.RouteNames[name],
+					generation.RoutePaths[name], generation.PublicHosts[name])
 			}
 		}
 		for _, network := range serviceNetworks {
@@ -349,14 +396,33 @@ func Generate(manifest Manifest, generation Generation) (StackFiles, error) {
 			Name: manifest.Name, Dir: docker.DirFor(manifest.Name),
 			Services: names, Enabled: true,
 		},
-		SecretFiles: secretFiles,
-		Images:      stackImages(manifest),
+		SecretFiles:       secretFiles,
+		EntrypointScripts: EntrypointScriptsFor(manifest),
+		Images:            stackImages(manifest),
 	}, nil
+}
+
+// serviceEntrypoint returns the image entrypoint a service must declare
+// to be supervised (S342): non-nil only when the service exports a
+// secret value into its environment.
+func serviceEntrypoint(manifest Manifest, service string) []string {
+	for _, decl := range manifest.Secrets {
+		for _, c := range decl.Consumers {
+			if c.Service == service && c.Export {
+				for _, svc := range manifest.Services {
+					if svc.Name == service {
+						return svc.Entrypoint
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // serviceSecretWiring renders one service's environment (plain manifest
 // variables plus secret file paths) and its secret references.
-func serviceSecretWiring(manifest Manifest, service string) (map[string]string, []string) {
+func serviceSecretWiring(manifest Manifest, service string) (map[string]string, []composeSecretRef) {
 	env := map[string]string{}
 	for _, svc := range manifest.Services {
 		if svc.Name == service {
@@ -365,7 +431,7 @@ func serviceSecretWiring(manifest Manifest, service string) (map[string]string, 
 			}
 		}
 	}
-	var secrets []string
+	var secrets []composeSecretRef
 	seen := map[string]bool{}
 	for _, decl := range manifest.Secrets {
 		for _, c := range decl.Consumers {
@@ -373,14 +439,16 @@ func serviceSecretWiring(manifest Manifest, service string) (map[string]string, 
 				continue
 			}
 			key := secretKey(service, decl.Name)
-			env[c.Env] = c.value(key)
+			if c.Path == "" {
+				env[c.Env] = c.value(key)
+			}
 			if !seen[key] {
 				seen[key] = true
-				secrets = append(secrets, key)
+				secrets = append(secrets, c.ref(key))
 			}
 		}
 	}
-	sort.Strings(secrets)
+	sort.Slice(secrets, func(i, j int) bool { return secrets[i].Key < secrets[j].Key })
 	if len(env) == 0 {
 		env = nil
 	}
@@ -403,8 +471,22 @@ func WriteStack(dir string, files StackFiles, secrets SecretStore) error {
 	if err := WriteSecretFiles(dir, files.SecretFiles, secrets); err != nil {
 		return err
 	}
+	if err := writeEntrypointScripts(dir, files.EntrypointScripts); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(files.ComposeYAML), 0o644); err != nil {
 		return fmt.Errorf("catalog: write compose.yaml: %w", err)
+	}
+	return nil
+}
+
+// writeEntrypointScripts writes one supervisor per exporting service.
+// Scripts are 0755 and hold paths, never values (S342).
+func writeEntrypointScripts(dir string, scripts []EntrypointScript) error {
+	for _, script := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, script.File), []byte(script.Body), 0o755); err != nil {
+			return fmt.Errorf("catalog: write %s: %w", script.File, err)
+		}
 	}
 	return nil
 }

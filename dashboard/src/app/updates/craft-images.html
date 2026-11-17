@@ -67,6 +67,10 @@
       <input name="craft-app" (input)="app = $any($event.target).value" />
     </label>
     <label>
+      Version (blank: the version in the craft app list)
+      <input name="craft-version" (input)="version = $any($event.target).value" />
+    </label>
+    <label>
       Craft app list file (blank: the one shipped with Homestead)
       <input name="craft-manifest" (input)="manifest = $any($event.target).value" />
     </label>

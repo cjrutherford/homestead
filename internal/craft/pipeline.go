@@ -87,10 +87,15 @@ var ErrImageMissing = errors.New("craft: image not present")
 
 // BuildSpec is one docker build.
 type BuildSpec struct {
-	Dir    string
-	Tag    string
-	Args   map[string]string
-	Output io.Writer
+	Dir string
+	// File is the Dockerfile name inside Dir ("" is Dockerfile).
+	File string
+	// Network allows the build network. Only Everything bridge builds set
+	// it (npm ci and go mod download, both lockfile-verified).
+	Network bool
+	Tag     string
+	Args    map[string]string
+	Output  io.Writer
 }
 
 // Builder is the Docker surface the pipeline needs; internal/docker
@@ -117,6 +122,11 @@ type Pipeline struct {
 	// catalog; StagingDir is the private scratch area.
 	ContextDir string
 	StagingDir string
+	// BridgeContextDir and BridgeSourcesDir are the Everything bridge
+	// build context and the pinned source archives shipped with the
+	// appliance (ADR-057). They are not part of the signed craft manifest.
+	BridgeContextDir string
+	BridgeSourcesDir string
 	// Fetch downloads rawURL into dst, writing at most limit bytes. Nil
 	// uses HTTPS with a bounded client.
 	Fetch func(ctx context.Context, rawURL string, dst io.Writer, limit int64) error
@@ -450,6 +460,9 @@ type run struct {
 	out    *tailBuffer
 	built  bool
 	locked bool
+	// bridge marks an Everything bridge build (ADR-057): the pin replaces
+	// the signed manifest, the bridge context replaces the craft context.
+	bridge *BridgeApp
 }
 
 func (p *Pipeline) newRun(req Request) *run {
@@ -656,7 +669,11 @@ func fetchWith(ctx context.Context, base *http.Client, raw string, dst io.Writer
 
 func (r *run) stepContext(ctx context.Context) error {
 	r.ctxDir = filepath.Join(r.tmp, "ctx")
-	if err := copyContext(r.p.ContextDir, r.ctxDir); err != nil {
+	src := r.p.ContextDir
+	if r.bridge != nil {
+		src = r.p.BridgeContextDir
+	}
+	if err := copyContext(src, r.ctxDir); err != nil {
 		return failed(CheckContext, err)
 	}
 	// The digest is taken of the private copy the build will use.
@@ -689,9 +706,14 @@ func randomSuffix() string {
 func (r *run) stepBuild(ctx context.Context) error {
 	app := r.v.App
 	r.stage = fmt.Sprintf("homestead/craft-%s:%s-build-%s", app.Name, app.Version, randomSuffix())
+	args := map[string]string{"ARTIFACT_FILE": app.Artifact.Name, "ARTIFACT_SHA256": app.Artifact.SHA256}
+	if r.bridge != nil {
+		r.stage = fmt.Sprintf("homestead/everything-%s:%s-build-%s", app.Name, app.Version, randomSuffix())
+		args["APP"] = app.Name
+	}
 	err := r.p.Builder.Build(ctx, BuildSpec{
-		Dir: r.ctxDir, Tag: r.stage, Output: r.out,
-		Args: map[string]string{"ARTIFACT_FILE": app.Artifact.Name, "ARTIFACT_SHA256": app.Artifact.SHA256},
+		Dir: r.ctxDir, Network: r.bridge != nil, Tag: r.stage, Output: r.out,
+		Args: args,
 	})
 	if ctx.Err() != nil {
 		return failed(CheckCancelled, fmt.Errorf("build cancelled: %w", ctx.Err()))
@@ -718,6 +740,9 @@ func (r *run) stepRecord(ctx context.Context) error {
 		return failed(CheckBuild, fmt.Errorf("built image not found: %v", err))
 	}
 	final := Tag(app.Name, app.Version)
+	if r.bridge != nil {
+		final = BridgeTag(app.Name, app.Version)
+	}
 	prev, prevErr := r.p.Store.Image(app.Name, app.Version)
 	prevID, _ := r.p.Builder.ImageID(ctx, final)
 	if err := r.p.Builder.Tag(ctx, id, final); err != nil {
@@ -725,7 +750,13 @@ func (r *run) stepRecord(ctx context.Context) error {
 	}
 	img := Image{App: app.Name, Version: app.Version, Tag: final, ImageID: id, Counter: r.v.Manifest.Counter, KeyID: r.v.KeyID,
 		ArtifactSHA256: app.Artifact.SHA256, ContextDigest: r.v.Manifest.ContextDigest, ManifestSHA256: r.v.ManifestSHA256, BuiltAt: time.Now().UTC()}
-	if err := r.p.Store.putImage(img, r.v.Override); err != nil {
+	put := func() error { return r.p.Store.putImage(img, r.v.Override) }
+	if r.bridge != nil {
+		// A bridge build has no manifest counter: it records the image
+		// only, never a craft baseline.
+		put = func() error { return r.p.Store.putBridgeImage(img) }
+	}
+	if err := put(); err != nil {
 		// Restore the previous tag (or drop the new one): no current tag
 		// may point at an unrecorded image.
 		bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)

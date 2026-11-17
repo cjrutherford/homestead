@@ -13,7 +13,9 @@ type AppPublicRequest struct {
 	Digest   string `json:"digest,omitempty"`
 	// BeforeInstall plans a name for an app the same install creates
 	// (S313); the plan is applied without it once the app is installed.
-	BeforeInstall bool `json:"before_install,omitempty"`
+	// Managed installs request the anticipated post-sign-in state.
+	BeforeInstall    bool `json:"before_install,omitempty"`
+	AnticipateSignIn bool `json:"anticipate_sign_in,omitempty"`
 }
 
 // AppPublicStatus is an app's public names on the tunnel.
@@ -120,6 +122,13 @@ type AppMoveStatus struct {
 	From    string   `json:"from,omitempty"`
 	Path    string   `json:"path,omitempty"`
 	To      []string `json:"to"`
+	// PublicFrom and PublicTo are set when the app holds a public name of
+	// its own that the move replaces with a path (ADR-061).
+	PublicFrom string `json:"public_from,omitempty"`
+	PublicTo   string `json:"public_to,omitempty"`
+	// Finish: an earlier move stopped before its old public name was
+	// removed (S479); approving the plan finishes it.
+	Finish bool `json:"finish,omitempty"`
 }
 
 // AppMovePlan is the reviewed move of an app to its path.
@@ -133,6 +142,11 @@ type AppMovePlan struct {
 	Redirects   []string `json:"redirects"`
 	AppSettings []string `json:"app_settings"`
 	SignIn      []string `json:"sign_in"`
+	PublicFrom  string   `json:"public_from,omitempty"`
+	PublicTo    string   `json:"public_to,omitempty"`
+	Removes     []string `json:"removes"`
+	Stops       []string `json:"stops"`
+	Finish      bool     `json:"finish,omitempty"`
 	Warnings    []string `json:"warnings"`
 	Digest      string   `json:"digest"`
 }

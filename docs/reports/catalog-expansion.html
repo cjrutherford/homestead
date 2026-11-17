@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Homestead — Catalog Expansion Report</title>
+<style>
+  :root{
+    --paper:#f1ece1;
+    --paper-deep:#e7e0d1;
+    --ink:#17150f;
+    --muted:#6d6759;
+    --faint:#9a9384;
+    --rule:#cbc2ae;
+    --accent:#b23a0c;
+    --moss:#44573a;
+    --wave1:#b23a0c;
+    --wave2:#2c4a56;
+    --wave3:#553a52;
+    --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Roboto Mono",Menlo,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--serif);
+    font-size:17px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      repeating-linear-gradient(0deg,rgba(23,21,15,.022) 0 1px,transparent 1px 3px),
+      radial-gradient(120% 80% at 50% 0%,rgba(255,255,255,.55),transparent 70%);
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 32px}
+
+  /* ---------- masthead ---------- */
+  header.mast{
+    border-bottom:1.5px solid var(--ink);
+    padding:26px 0 0;
+  }
+  .kicker{
+    display:flex;justify-content:space-between;align-items:baseline;
+    font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);
+  }
+  .kicker b{color:var(--ink);font-weight:600}
+  h1{
+    font-size:clamp(2.6rem,6.2vw,5rem);
+    line-height:.94;letter-spacing:-.03em;font-weight:400;
+    margin:34px 0 0;max-width:15ch;
+  }
+  h1 em{font-style:italic;color:var(--accent)}
+  .deck{
+    display:grid;grid-template-columns:1.35fr .9fr;gap:48px;
+    padding:30px 0 34px;align-items:end;
+  }
+  .deck p{margin:0;font-size:1.1rem;color:#332f26;max-width:56ch}
+  .figures{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule)}
+  .fig{background:var(--paper);padding:14px 16px}
+  .fig b{display:block;font-family:var(--mono);font-size:1.9rem;font-weight:500;letter-spacing:-.03em;line-height:1}
+  .fig span{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:7px}
+
+  /* ---------- sticky nav ---------- */
+  nav.rail{
+    position:sticky;top:0;z-index:20;
+    background:rgba(241,236,225,.93);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--rule);
+  }
+  nav.rail .wrap{display:flex;gap:26px;align-items:center;overflow-x:auto;padding-top:11px;padding-bottom:11px}
+  nav.rail a{
+    font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);text-decoration:none;white-space:nowrap;padding:2px 0;
+    border-bottom:1px solid transparent;transition:color .18s,border-color .18s;
+  }
+  nav.rail a:hover{color:var(--ink);border-color:var(--accent)}
+  nav.rail .spacer{flex:1}
+
+  /* ---------- levels strip ---------- */
+  .levels{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;padding:38px 0 46px;border-bottom:1px solid var(--rule)}
+  .level .tag{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+  .level h3{margin:8px 0 6px;font-size:1.05rem;font-weight:600;letter-spacing:-.01em}
+  .level p{margin:0;font-size:.86rem;color:var(--muted);line-height:1.45}
+
+  /* ---------- wave ---------- */
+  section.wave{padding:64px 0 20px;border-bottom:1px solid var(--rule)}
+  .wave-head{display:grid;grid-template-columns:190px 1fr;gap:36px;align-items:start;margin-bottom:34px}
+  .wave-num{
+    font-size:clamp(4.4rem,9vw,7.5rem);line-height:.78;font-weight:400;
+    letter-spacing:-.05em;color:var(--rule);font-family:var(--serif);
+  }
+  .wave.w1 .wave-num{color:#dfc4b4}
+  .wave.w2 .wave-num{color:#bfcdd2}
+  .wave.w3 .wave-num{color:#cdc1cb}
+  .wave-title h2{margin:0;font-size:clamp(1.5rem,2.6vw,2.1rem);font-weight:400;letter-spacing:-.02em}
+  .wave-title p{margin:8px 0 0;color:var(--muted);font-size:.95rem;max-width:62ch}
+  .wave-meta{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-top:14px}
+
+  /* ---------- app rows ---------- */
+  .app{
+    display:grid;grid-template-columns:190px 1fr;gap:36px;
+    padding:26px 0 26px;
+    border-top:1px solid var(--rule);
+    position:relative;
+  }
+  .app:hover{background:linear-gradient(90deg,rgba(178,58,12,.045),transparent 42%)}
+  .app-id{display:flex;gap:14px;align-items:baseline}
+  .app-idx{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:3px}
+  .app-name{font-family:var(--mono);font-size:.92rem;font-weight:600;letter-spacing:-.01em;word-break:break-word}
+  .app-cat{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);margin-top:7px}
+  .app h3{margin:0 0 4px;font-size:1.22rem;font-weight:600;letter-spacing:-.015em}
+  .app .why{margin:0 0 16px;color:#3b372d;font-size:.98rem;max-width:68ch}
+  .meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 26px}
+  .meta div{border-top:1px solid var(--rule);padding-top:8px}
+  .meta dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .meta dd{margin:0;font-size:.86rem;line-height:1.45;color:#332f26}
+  .meta .wide{grid-column:1/-1}
+  .chip{
+    display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+    padding:2px 7px;border:1px solid currentColor;border-radius:2px;margin:0 4px 4px 0;
+  }
+  .chip.oidc{color:var(--moss)}
+  .chip.local{color:#8a5a2b}
+  .chip.ghcr{color:#2c4a56}
+  .chip.f4{color:#553a52}
+  .chip.f2{color:#7a2f2f}
+  .chip.warn{color:var(--accent)}
+
+  /* ---------- tables ---------- */
+  .panel{padding:56px 0}
+  .panel h2{font-size:1.7rem;font-weight:400;letter-spacing:-.02em;margin:0 0 6px}
+  .panel .sub{color:var(--muted);font-size:.95rem;margin:0 0 28px;max-width:70ch}
+  table{width:100%;border-collapse:collapse;font-size:.87rem}
+  th{
+    text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
+    text-transform:uppercase;color:var(--faint);font-weight:500;
+    padding:0 14px 9px 0;border-bottom:1.5px solid var(--ink);
+  }
+  td{padding:12px 14px 12px 0;border-bottom:1px solid var(--rule);vertical-align:top;color:#332f26}
+  td:first-child{font-family:var(--mono);font-size:.83rem;color:var(--ink);white-space:nowrap}
+  tr:hover td{background:rgba(178,58,12,.035)}
+  td.num{font-family:var(--mono);white-space:nowrap}
+
+  /* ---------- everything track ---------- */
+  .how{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);margin:0 0 34px}
+  .how div{background:var(--paper);padding:16px 16px 18px}
+  .how b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+  .how p{margin:0;font-size:.83rem;color:var(--muted);line-height:1.42}
+  .tally{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 26px}
+  .tally span{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--rule);padding:5px 10px;color:var(--muted)}
+  .tally span b{color:var(--ink);font-weight:600}
+  tr.grp td{
+    padding:30px 0 9px;border-bottom:1px solid var(--ink);background:none;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.17em;text-transform:uppercase;color:var(--accent);
+  }
+  tr.grp:first-child td{padding-top:0}
+  tr.grp td em{font-style:normal;color:var(--faint);letter-spacing:.06em;text-transform:none;margin-left:8px}
+  td.app{font-family:var(--mono);font-size:.85rem;color:var(--ink);white-space:nowrap}
+  td.lic{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+  td.lic.agpl{color:#8a2f2f}
+  td.does{font-size:.84rem;color:#3b372d}
+  td.why{font-size:.84rem;color:var(--muted)}
+  td.why b{color:#332f26;font-weight:600}
+
+  /* ---------- rejected ---------- */
+  .twocol{display:grid;grid-template-columns:1fr 1fr;gap:0 46px}
+  .item{padding:14px 0;border-bottom:1px solid var(--rule)}
+  .item b{display:block;font-size:.95rem;font-weight:600}
+  .item span{display:block;font-size:.83rem;color:var(--muted);line-height:1.45;margin-top:3px}
+
+  /* ---------- footer ---------- */
+  footer{padding:60px 0 80px;border-top:1.5px solid var(--ink);margin-top:40px}
+  footer .sig{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+
+  /* ---------- reveal ---------- */
+  .rv{opacity:0;transform:translateY(14px);transition:opacity .55s ease,transform .55s ease}
+  .rv.in{opacity:1;transform:none}
+  @media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+
+  @media (max-width:860px){
+    .wrap{padding:0 20px}
+    .deck{grid-template-columns:1fr;gap:26px}
+    .levels{grid-template-columns:1fr 1fr}
+    .wave-head{grid-template-columns:1fr;gap:6px}
+    .wave-num{font-size:3.4rem}
+    .app{grid-template-columns:1fr;gap:12px}
+    .meta{grid-template-columns:1fr 1fr}
+    .how{grid-template-columns:1fr 1fr}
+    .twocol{grid-template-columns:1fr}
+  }
+  @media print{
+    nav.rail{display:none}
+    body{background:#fff}
+    .app,.panel,section.wave{break-inside:avoid}
+    .rv{opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<header class="mast">
+  <div class="wrap">
+    <div class="kicker">
+      <span><b>Homestead</b> — catalog expansion</span>
+      <span>Plan approved 2026-10-23</span>
+    </div>
+    <h1>The catalog,<br><em>extended</em>.</h1>
+    <div class="deck">
+      <p>Twenty new application packages across three waves, taking the curated catalog from 17 to 37. Every entry passed the same hard gates: pinned multi-arch images, no privileged or host-network needs, knowable data placement, backupable state, and a stated identity path.</p>
+      <div class="figures">
+        <div class="fig"><b>20</b><span>new packages</span></div>
+        <div class="fig"><b>3</b><span>delivery waves</span></div>
+        <div class="fig"><b>5</b><span>foundations</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<nav class="rail">
+  <div class="wrap">
+    <a href="#levels">Integration</a>
+    <a href="#wave-1">Wave 1</a>
+    <a href="#wave-2">Wave 2</a>
+    <a href="#wave-3">Wave 3</a>
+    <a href="#capacity">Capacity</a>
+    <a href="#foundations">Foundations</a>
+    <a href="#everything">Everything apps</a>
+    <a href="#conditional">Conditional</a>
+    <a href="#rejected">Not planned</a>
+    <span class="spacer"></span>
+    <a href="#decisions">Decisions</a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <div class="levels rv" id="levels">
+    <div class="level">
+      <div class="tag">L1</div>
+      <h3>Co-install</h3>
+      <p>Same appliance, same backup, edge and update lifecycle. Every package gets this.</p>
+    </div>
+    <div class="level">
+      <div class="tag">L2</div>
+      <h3>Shared identity</h3>
+      <p>Authentik OIDC, or a documented local-auth exception where the app cannot do it.</p>
+    </div>
+    <div class="level">
+      <div class="tag">L3</div>
+      <h3>Shared library</h3>
+      <p>One bulk directory mounted into two apps. Declared once, mounted by the owner.</p>
+    </div>
+    <div class="level">
+      <div class="tag">L4</div>
+      <h3>Workflow handoff</h3>
+      <p>One app calls another: request, indexer, downloader, library. Owner-configured.</p>
+    </div>
+  </div>
+
+  <!-- ================= WAVE 1 ================= -->
+  <section class="wave w1" id="wave-1">
+    <div class="wave-head rv">
+      <div class="wave-num">01</div>
+      <div class="wave-title">
+        <h2>Everyday suite</h2>
+        <p>The apps a household reaches for daily. Gated on OIDC client actuation, so identity is real on day one rather than a manual step.</p>
+        <div class="wave-meta">7 packages · gated on F1 + F3 + F5</div>
+      </div>
+    </div>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">01</span><div><span class="app-name">vaultwarden</span><span class="app-cat">Passwords</span></div></div>
+      <div>
+        <h3>Bitwarden-compatible password manager</h3>
+        <p class="why">The highest-value service after files and photos. One container, low memory, and every Bitwarden client works against it.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> optional; local login works</dd></div>
+          <div><dt>Data</dt><dd>SQLite; app data; owner-set admin token</dd></div>
+          <div><dt>Exposure</dt><dd>Local/overlay default; public needs a TLS warning</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip warn">F1</span> admin token and OIDC secret are plaintext env today — a basic install omits the admin page and uses owner signup.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">02</span><div><span class="app-name">paperless-ngx</span><span class="app-cat">Documents</span></div></div>
+      <div>
+        <h3>Scan, OCR, index, archive</h3>
+        <p class="why">Turns a drawer of paper into a searchable household archive. Consumes a shared scans folder from Nextcloud.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>Postgres + Redis; bulk document library</dd></div>
+          <div><dt>Integrates</dt><dd>Nextcloud, Authentik, backups</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip warn">F1</span> Django secret, DB password and admin password are plaintext env. <span class="chip ghcr">F3</span> GHCR image, so update discovery matters.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">03</span><div><span class="app-name">gitea</span><span class="app-cat">Development</span></div></div>
+      <div>
+        <h3>Private git forge</h3>
+        <p class="why">Repositories, issues, packages and CI hooks for owner projects, without a hosted account. Forgejo was the alternative; one forge ships, not both.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite or Postgres; repository data</dd></div>
+          <div><dt>Exposure</dt><dd>Local/overlay default</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>Single container. The route host feeds <code>ROOT_URL</code>. SSH clone needs an owner decision; the package starts HTTPS-only.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">04</span><div><span class="app-name">freshrss</span><span class="app-cat">Feeds</span></div></div>
+      <div>
+        <h3>RSS and Atom reader</h3>
+        <p class="why">A quiet, dependable daily-use app. Small enough to sit beside everything else.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> — Debian image only</dd></div>
+          <div><dt>Data</dt><dd>SQLite or Postgres</dd></div>
+          <div><dt>Integrates</dt><dd>Authentik, backups</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>Pin the Debian-based image; the Alpine variant lacks OIDC support.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">05</span><div><span class="app-name">linkding</span><span class="app-cat">Bookmarks</span></div></div>
+      <div>
+        <h3>Minimal bookmark manager</h3>
+        <p class="why">Tags, search, a browser extension, and very little else — which is the point.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite</dd></div>
+          <div><dt>Cost</dt><dd>One container, negligible RAM</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>No blockers. The simplest package in the wave.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">06</span><div><span class="app-name">mealie</span><span class="app-cat">Recipes</span></div></div>
+      <div>
+        <h3>Recipes and meal planning</h3>
+        <p class="why">Recipe capture, weekly planning and shopping lists — a household app that gets used because it is shared.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite or Postgres</dd></div>
+          <div><dt>Integrates</dt><dd>Authentik, backups</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip ghcr">F3</span> GHCR image; without GHCR discovery it installs but never shows an update.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">07</span><div><span class="app-name">uptime-kuma</span><span class="app-cat">Monitoring</span></div></div>
+      <div>
+        <h3>“Is everything up?”</h3>
+        <p class="why">Monitors the appliance's own apps and URLs. The one package in the wave with no SSO path at all.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local admin</span> documented exception</dd></div>
+          <div><dt>Data</dt><dd>SQLite</dd></div>
+          <div><dt>Exposure</dt><dd>Local/overlay only</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>Not a public status page in v1. Ships inside the wave after F1 lands, as the explicit local-auth exception.</dd></div>
+        </dl>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= WAVE 2 ================= -->
+  <section class="wave w2" id="wave-2">
+    <div class="wave-head rv">
+      <div class="wave-num">02</div>
+      <div class="wave-title">
+        <h2>Family library</h2>
+        <p>Books, music, tasks, money and notes. Mostly single containers over SQLite, with bulk storage shared by convention rather than by duplication.</p>
+        <div class="wave-meta">7 packages · no wave-level blockers</div>
+      </div>
+    </div>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">08</span><div><span class="app-name">audiobookshelf</span><span class="app-cat">Audio</span></div></div>
+      <div>
+        <h3>Audiobooks and podcasts</h3>
+        <p class="why">Mobile apps with progress sync across devices, pointed at one bulk audiobook library.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite; bulk audiobook and podcast library</dd></div>
+          <div><dt>Integrates</dt><dd>Jellyfin library conventions, backups</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip ghcr">F3</span> GHCR image.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">09</span><div><span class="app-name">navidrome</span><span class="app-cat">Music</span></div></div>
+      <div>
+        <h3>Subsonic-compatible streaming</h3>
+        <p class="why">A large client ecosystem for one music library. Best run against the same bulk directory as Jellyfin.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Reverse-proxy header</span> only</dd></div>
+          <div><dt>Data</dt><dd>SQLite; bulk music library</dd></div>
+          <div><dt>Integrates</dt><dd>Jellyfin (same library)</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>Local-auth exception. The docs must make the shared mount normal so two music libraries do not appear.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">10</span><div><span class="app-name">komga</span><span class="app-cat">Books &amp; comics</span></div></div>
+      <div>
+        <h3>Comics, manga, PDFs</h3>
+        <p class="why">A web reader with OPDS, so a tablet or e-reader can browse the shelf without an app store.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite; bulk comics library</dd></div>
+          <div><dt>Cost</dt><dd>JVM memory is the real price</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>One container. Set a heap ceiling in the manifest so it cannot crowd the appliance.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">11</span><div><span class="app-name">calibre-web-automated</span><span class="app-cat">Books</span></div></div>
+      <div>
+        <h3>E-book library with ingest</h3>
+        <p class="why">Automatic ingest and conversion into a Calibre library, with a web reader on top.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local only</span> no native OIDC found</dd></div>
+          <div><dt>Data</dt><dd>SQLite + Calibre metadata; bulk ebook library</dd></div>
+          <div><dt>Integrates</dt><dd>Nextcloud ingest folder, backups</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>Community image. OIDC support must be re-verified at slice time; if absent, it stays a documented local-only exception.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">12</span><div><span class="app-name">vikunja</span><span class="app-cat">Tasks</span></div></div>
+      <div>
+        <h3>Shared to-do lists and projects</h3>
+        <p class="why">Household task tracking that also speaks CalDAV, so it meets Nextcloud's calendar halfway.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite or Postgres</dd></div>
+          <div><dt>Integrates</dt><dd>Nextcloud calendar (CalDAV)</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>One container, no blockers.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">13</span><div><span class="app-name">actual-budget</span><span class="app-cat">Finance</span></div></div>
+      <div>
+        <h3>Local-first household budgeting</h3>
+        <p class="why">Bank import and multi-device sync without a vendor account. Chosen over Firefly III, which is accounting-heavy and needs MariaDB.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> verify at slice time</dd></div>
+          <div><dt>Data</dt><dd>SQLite</dd></div>
+          <div><dt>Exposure</dt><dd>Local/overlay, with backup</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>If OIDC proves unusable, it becomes a documented local-only exception rather than a blocker.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">14</span><div><span class="app-name">memos</span><span class="app-cat">Notes</span></div></div>
+      <div>
+        <h3>Fast private notes</h3>
+        <p class="why">Tags, search and a small API. Complements Nextcloud rather than competing with it for files.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>SQLite or Postgres</dd></div>
+          <div><dt>Integrates</dt><dd>Authentik, backups</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>If the owner wants Nextcloud Notes instead, that is a Nextcloud app decision, not a catalog package.</dd></div>
+        </dl>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= WAVE 3 ================= -->
+  <section class="wave w3" id="wave-3">
+    <div class="wave-head rv">
+      <div class="wave-num">03</div>
+      <div class="wave-title">
+        <h2>Media automation and wiki</h2>
+        <p>The largest integration win with Jellyfin, and the largest support surface. Accepted with a written community-image policy rather than dropped.</p>
+        <div class="wave-meta">6 packages · gated on F2 + F4</div>
+      </div>
+    </div>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">15</span><div><span class="app-name">prowlarr</span><span class="app-cat">Media automation</span></div></div>
+      <div>
+        <h3>Indexer manager</h3>
+        <p class="why">One place to define indexers, then hand them to every *arr app that needs them.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local only</span></dd></div>
+          <div><dt>Data</dt><dd>SQLite; configuration</dd></div>
+          <div><dt>Integrates</dt><dd>Sonarr, Radarr</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip f4">F4</span> LinuxServer image requires the community-image policy.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">16</span><div><span class="app-name">sonarr</span><span class="app-cat">Media automation</span></div></div>
+      <div>
+        <h3>TV library automation</h3>
+        <p class="why">Watches for episodes, hands downloads to SABnzbd, files the result where Jellyfin already looks.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local only</span></dd></div>
+          <div><dt>Data</dt><dd>SQLite; config; shared media library</dd></div>
+          <div><dt>Integrates</dt><dd>Prowlarr, SABnzbd, Jellyfin</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip f4">F4</span> LinuxServer image. Library paths must match Jellyfin exactly.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">17</span><div><span class="app-name">radarr</span><span class="app-cat">Media automation</span></div></div>
+      <div>
+        <h3>Movie library automation</h3>
+        <p class="why">The same pipeline as Sonarr, aimed at films instead of seasons.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local only</span></dd></div>
+          <div><dt>Data</dt><dd>SQLite; config; shared media library</dd></div>
+          <div><dt>Integrates</dt><dd>Prowlarr, SABnzbd, Jellyfin</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip f4">F4</span> LinuxServer image.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">18</span><div><span class="app-name">sabnzbd</span><span class="app-cat">Media automation</span></div></div>
+      <div>
+        <h3>Usenet download client</h3>
+        <p class="why">Chosen over a public torrent client to avoid the legal and network complications that come with seeding traffic.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Local only</span></dd></div>
+          <div><dt>Data</dt><dd>SQLite and config; downloads library</dd></div>
+          <div><dt>Integrates</dt><dd>Prowlarr, Sonarr, Radarr</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip f4">F4</span> LinuxServer image. The owner supplies a Usenet provider.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">19</span><div><span class="app-name">seerr</span><span class="app-cat">Media requests</span></div></div>
+      <div>
+        <h3>Request portal for Jellyfin</h3>
+        <p class="why">Household members ask for a title; the approval lands in Sonarr or Radarr. Jellyfin login, no second account.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip local">Jellyfin login</span></dd></div>
+          <div><dt>Data</dt><dd>SQLite</dd></div>
+          <div><dt>Exposure</dt><dd>LAN only, never public</dd></div>
+          <div class="wide"><dt>Notes</dt><dd>One container. This is the one place where L4 handoff is realistic, because the apps are designed to talk to each other.</dd></div>
+        </dl>
+      </div>
+    </article>
+
+    <article class="app rv">
+      <div class="app-id"><span class="app-idx">20</span><div><span class="app-name">bookstack</span><span class="app-cat">Wiki</span></div></div>
+      <div>
+        <h3>Structured household wiki</h3>
+        <p class="why">Shelves, chapters and pages for documentation that outlives the person who wrote it.</p>
+        <dl class="meta">
+          <div><dt>Identity</dt><dd><span class="chip oidc">OIDC</span> via Authentik</dd></div>
+          <div><dt>Data</dt><dd>MariaDB + uploaded files</dd></div>
+          <div><dt>Integrates</dt><dd>Authentik, backups</dd></div>
+          <div class="wide"><dt>Blockers</dt><dd><span class="chip f2">F2</span> MariaDB export. <span class="chip warn">F1</span> DB password is plaintext env. <span class="chip f4">F4</span> LinuxServer image.</dd></div>
+        </dl>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= CAPACITY ================= -->
+  <section class="panel rv" id="capacity">
+    <h2>Capacity is not a rounding error</h2>
+    <p class="sub">Planning figures, not measurements. An 8 GB appliance is a starter, not a machine that runs the whole catalog — twenty packages do not fit in eight gigabytes, and saying so is part of the product.</p>
+    <table>
+      <thead><tr><th>Profile</th><th>RAM</th><th>Packages</th><th>App footprint</th></tr></thead>
+      <tbody>
+        <tr><td>Starter</td><td class="num">8 GB</td><td>Nextcloud, Jellyfin, Vaultwarden, Linkding, FreshRSS, Uptime Kuma</td><td class="num">4–5 GB</td></tr>
+        <tr><td>Family</td><td class="num">16 GB</td><td>Starter + Immich, Paperless, Mealie, Vikunja, Actual, Audiobookshelf, Navidrome, Gitea, Memos</td><td class="num">10–12 GB</td></tr>
+        <tr><td>Media</td><td class="num">16–32 GB</td><td>Starter + *arr stack, Seerr, Komga, Calibre-Web Automated</td><td class="num">8–10 GB</td></tr>
+        <tr><td>Full</td><td class="num">32 GB</td><td>Family + Media + BookStack; qBittorrent only with a VPN design</td><td class="num">18–22 GB</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= FOUNDATIONS ================= -->
+  <section class="panel rv" id="foundations">
+    <h2>Five foundations, not five nice-to-haves</h2>
+    <p class="sub">Without these, the packages install but cannot honestly be called integrated. F1, F3 and F5 gate Wave 1; F2 and F4 gate Wave 3.</p>
+    <table>
+      <thead><tr><th>#</th><th>Item</th><th>Why it blocks</th><th>Gate</th></tr></thead>
+      <tbody>
+        <tr><td>F1</td><td>OIDC client actuation + secret delivery</td><td>S202–S204 record intent but create no clients and write no credentials. Secrets are 0600 files; several apps read only plaintext env. Resolved as a supervised entrypoint wrapper under an ADR-021 amendment.</td><td class="num">Wave 1</td></tr>
+        <tr><td>F2</td><td>MariaDB / MySQL backup export</td><td>The backup contract supports SQLite and Postgres only. Copying a live database directory is not crash-consistent.</td><td class="num">BookStack</td></tr>
+        <tr><td>F3</td><td>GHCR update discovery</td><td>S190 discovers Docker Hub tags only. Paperless, Mealie, Audiobookshelf and Seerr publish on GHCR.</td><td class="num">Wave 1</td></tr>
+        <tr><td>F4</td><td>Community-image trust policy</td><td>The *arr family, SABnzbd and BookStack have no upstream image. A written policy for trusted publishers, multi-arch and provenance.</td><td class="num">Wave 3</td></tr>
+        <tr><td>F5</td><td>Catalog bundles and capacity</td><td>Owners need Starter/Family/Media/Full profiles with combined RAM and storage checks, not twenty installs one at a time.</td><td class="num">Wave 1</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= EVERYTHING TRACK ================= -->
+  <section class="panel rv" id="everything">
+    <h2>The Everything apps</h2>
+    <p class="sub">Fifty-one apps in <code>HeyPuter/everything</code>, all Vite SPAs that load one line from a CDN — <code>&lt;script src="https://js.puter.com/v2/"&gt;</code> — and talk to a small SDK surface. That line is the seam. Homestead does not fork the repo and does not vendor the AGPL SDK: it pins an upstream commit, applies a one-line patch, and serves its own <code>window.puter</code> in place of the cloud. Everything below was measured from the source tree, not from the README.</p>
+
+    <div class="how">
+      <div><b>1 · Pin</b><p>Record the commit SHA and per-app licence in <code>vendor/everything/pin.yaml</code>. No fork, no drift, no 434 MB tree.</p></div>
+      <div><b>2 · Patch</b><p>One patch per app swaps the CDN script for ours and adds a CSP that fails closed if anything still reaches out.</p></div>
+      <div><b>3 · Bridge</b><p><code>window.puter</code> in our repo, MIT, served as its own script: auth, env, fs, kv, ui, perms, exit.</p></div>
+      <div><b>4 · Test</b><p>Run upstream's own vitest suite against the bridge. If they adopt a new API, their tests go red before ours do.</p></div>
+    </div>
+
+    <div class="tally">
+      <span><b>51</b> assessed</span>
+      <span><b>11</b> ship clean</span>
+      <span><b>3</b> cheap extras</span>
+      <span><b>5</b> owner-operator</span>
+      <span><b>10</b> craft overlap</span>
+      <span><b>18</b> blocked</span>
+      <span><b>3</b> multiplayer games</span>
+      <span><b>1</b> later</span>
+    </div>
+
+    <table>
+      <thead><tr><th style="width:15%">App</th><th style="width:9%">Licence</th><th style="width:28%">What it is</th><th style="width:48%">Why it lands there</th></tr></thead>
+      <tbody>
+
+        <tr class="grp"><td colspan="4">Ship clean <em>— bridge covers the whole surface</em></td></tr>
+        <tr><td class="app">tasks</td><td class="lic">MIT</td><td class="does">Personal and shared to-do lists</td><td class="why"><b>3 auth calls and 1 file write.</b> Everything else is local. Cleanest bridge target in the repo and a real household gap.</td></tr>
+        <tr><td class="app">projects</td><td class="lic">MIT</td><td class="does">Kanban boards, timelines, milestones, attachments</td><td class="why"><b>24 fs, 4 ui, 2 kv.</b> Renovations, trips, moving house — no capability outside the bridge.</td></tr>
+        <tr><td class="app">records</td><td class="lic">MIT</td><td class="does">Connected tables, views and forms</td><td class="why"><b>The Airtable-shaped gap.</b> 9 fs, 5 auth, 4 kv, 2 ui. Nothing exotic.</td></tr>
+        <tr><td class="app">notes</td><td class="lic agpl">AGPL-3.0</td><td class="does">Notebooks, sections, pages, ink, tables, search</td><td class="why"><b>The best-loved app here.</b> 7 fs, 6 auth, 3 ui, 1 kv. AI assist is 2 calls and gets disabled. AGPL §13 applies once we serve it.</td></tr>
+        <tr><td class="app">contacts</td><td class="lic">MIT</td><td class="does">Private address book</td><td class="why"><b>9 kv, 20 ui, 1 fs.</b> AI assist is optional. Address book is a genuine gap; Nextcloud's is clunky.</td></tr>
+        <tr><td class="app">inventory</td><td class="lic">MIT</td><td class="does">Products, quantities, locations, warranties, suppliers</td><td class="why"><b>7 kv, 5 auth, 1 fs.</b> Household inventory — tools, warranties, spares — is exactly what an appliance owner tracks.</td></tr>
+        <tr><td class="app">time-tracking</td><td class="lic">MIT</td><td class="does">Timesheets by client, project or task</td><td class="why"><b>11 fs, 4 kv.</b> Low household value, high owner-operator value. No blockers.</td></tr>
+        <tr><td class="app">circuits</td><td class="lic">MIT</td><td class="does">Schematic capture and PCB layout, WebGL</td><td class="why"><b>A single fs call.</b> Hobbyist gap with no craft-suite equivalent. Cheap to carry.</td></tr>
+        <tr><td class="app">parametric</td><td class="lic">MIT</td><td class="does">Feature-based 3D part modelling</td><td class="why"><b>1 fs, 1 ai.</b> Distinct from CADCraft's 2D drafting — sketches, extrude, fillet, revolve.</td></tr>
+        <tr><td class="app">3d</td><td class="lic agpl">AGPL-3.0</td><td class="does">Three.js scene editor</td><td class="why"><b>The most self-contained app in the repo.</b> One AI call and nothing else: state in IndexedDB, files through the File System Access API. Chrome-class browsers only.</td></tr>
+        <tr><td class="app">solitaire</td><td class="lic">MIT</td><td class="does">Klondike</td><td class="why"><b>245 KB, kv save state, 13 tests.</b> Near-zero cost; a nice "it just works" demo for the bridge.</td></tr>
+
+        <tr class="grp"><td colspan="4">Cheap extras <em>— one caveat each</em></td></tr>
+        <tr><td class="app">sudoku</td><td class="lic">MIT</td><td class="does">Sudoku, four difficulties, daily puzzle</td><td class="why"><b>One kv call.</b> Same cost profile as solitaire.</td></tr>
+        <tr><td class="app">expense</td><td class="lic">MIT</td><td class="does">Expense reports and reconciliation</td><td class="why"><b>Only auth is wired</b> — state is in localStorage, despite the "AI OCR" blurb. Ship it, but do not promise receipt scanning.</td></tr>
+        <tr><td class="app">api-client</td><td class="lic">MIT</td><td class="does">HTTP request builder and tester</td><td class="why"><b>Needs <code>puter.net</code></b>, the only bridge extension worth adding. A browser HTTP client is useful on a LAN appliance.</td></tr>
+
+        <tr class="grp"><td colspan="4">Owner-operator <em>— small-business apps, bridge-clean, wrong default suite</em></td></tr>
+        <tr><td class="app">accounting</td><td class="lic">MIT</td><td class="does">Double-entry bookkeeping, invoices, reconciliation</td><td class="why"><b>3 kv, 2 auth.</b> Technically trivial; overlaps Actual Budget, which is planned and better for a household.</td></tr>
+        <tr><td class="app">cap-table</td><td class="lic">MIT</td><td class="does">Equity, options, fundraising</td><td class="why"><b>27 kv, 7 fs.</b> Clean, but a narrow audience. Offer it, do not feature it.</td></tr>
+        <tr><td class="app">crm</td><td class="lic">MIT</td><td class="does">Leads, companies, deals, forecasts</td><td class="why"><b>11 fs, 5 kv, 4 ai.</b> Optional AI only. Genuine for a one-person business.</td></tr>
+        <tr><td class="app">pos</td><td class="lic">MIT</td><td class="does">Point of sale, catalogue, receipts, taxes</td><td class="why"><b>31 fs.</b> Works, but a shop counter on a homestead appliance is a stretch.</td></tr>
+        <tr><td class="app">assets<span class="app-cat" style="margin-top:4px">dir name</span></td><td class="lic">MIT</td><td class="does">AssetDesk — equipment, warranties, assignments</td><td class="why"><b>No puter calls at all.</b> Fully local, zero bridge work — but it collides with <code>inventory</code>. Package one, not both.</td></tr>
+
+        <tr class="grp"><td colspan="4">Craft overlap <em>— the suite already owns this job</em></td></tr>
+        <tr><td class="app">documents</td><td class="lic">MIT</td><td class="does">Word processor, real .docx</td><td class="why">WordCraft. Also pulls 10 fs, 4 site, 3 workers, 2 email.</td></tr>
+        <tr><td class="app">spreadsheet</td><td class="lic agpl">AGPL-3.0</td><td class="does">Formulas, .xlsx</td><td class="why">GridCraft. 12 workers and 6 email calls on top of the overlap.</td></tr>
+        <tr><td class="app">presentation</td><td class="lic agpl">AGPL-3.0</td><td class="does">Presentation editor, real .pptx</td><td class="why">DeckCraft.</td></tr>
+        <tr><td class="app">pdf</td><td class="lic agpl">AGPL-3.0</td><td class="does">PDF workspace</td><td class="why">PdfCraft. Only 4 ui calls, so it would be easy — just redundant.</td></tr>
+        <tr><td class="app">vector-studio</td><td class="lic">MIT</td><td class="does">Vector illustration</td><td class="why">VectorCraft. 30 fs, 11 kv, plus peer and workers.</td></tr>
+        <tr><td class="app">photo-studio</td><td class="lic">MIT</td><td class="does">Photo editing</td><td class="why">PhotoCraft, and Immich owns photos.</td></tr>
+        <tr><td class="app">music-studio</td><td class="lic">MIT</td><td class="does">Pattern-based music production</td><td class="why">SoundCraft. Different enough to argue, not enough to ship.</td></tr>
+        <tr><td class="app">audio-studio</td><td class="lic">MIT</td><td class="does">Multitrack audio editor</td><td class="why">SoundCraft, directly.</td></tr>
+        <tr><td class="app">video-studio</td><td class="lic agpl">AGPL-3.0</td><td class="does">Multi-track video editor</td><td class="why">FilmCraft. 27 AI calls and 21 fs calls make it the heaviest bridge consumer of the group.</td></tr>
+        <tr><td class="app">cad</td><td class="lic">MIT</td><td class="does">2D drafting, DXF</td><td class="why">CADCraft. <code>parametric</code> covers the 3D gap without the overlap.</td></tr>
+
+        <tr class="grp"><td colspan="4">Blocked <em>— needs a capability an appliance should not provide</em></td></tr>
+        <tr><td class="app">calendar</td><td class="lic">MIT</td><td class="does">Calendar app</td><td class="why"><b>25 email calls</b> for invites plus 5 workers. Nextcloud already serves CalDAV anyway.</td></tr>
+        <tr><td class="app">email</td><td class="lic agpl">AGPL-3.0</td><td class="does">Mail client</td><td class="why"><b>Needs a mail server.</b> The expansion plan already rules out port 25, SPF/DKIM/DMARC and blocklist reputation.</td></tr>
+        <tr><td class="app">meetings</td><td class="lic">MIT</td><td class="does">Realtime video meetings</td><td class="why"><b>20 peer calls.</b> WebRTC mesh against Puter's signalling — a different product.</td></tr>
+        <tr><td class="app">teamchat</td><td class="lic">MIT</td><td class="does">Workspaces, channels, threads, DMs</td><td class="why"><b>19 workers, 6 peer, 5 email.</b> A chat server is its own ADR.</td></tr>
+        <tr><td class="app">wiki</td><td class="lic">MIT</td><td class="does">Pages, docs, databases</td><td class="why"><b>19 fs, 12 kv, 3 workers.</b> Technically close — but BookStack is already in Wave 3 and owns this job.</td></tr>
+        <tr><td class="app">signatures</td><td class="lic">MIT</td><td class="does">Send documents for signature</td><td class="why"><b>6 email, 5 workers.</b> The product is the delivery email.</td></tr>
+        <tr><td class="app">help-desk</td><td class="lic">MIT</td><td class="does">Shared inbox, tickets, help centre</td><td class="why"><b>4 workers, 3 email.</b> A business support desk, not a household app.</td></tr>
+        <tr><td class="app">field-service</td><td class="lic">MIT</td><td class="does">Jobs, quotes, scheduling, payments</td><td class="why"><b>10 workers, 3 email.</b> Vertical B2B.</td></tr>
+        <tr><td class="app">fleet</td><td class="lic">MIT</td><td class="does">Vehicles, inspections, service, fuel</td><td class="why"><b>4 workers.</b> Vertical B2B.</td></tr>
+        <tr><td class="app">legal</td><td class="lic">MIT</td><td class="does">Matters, billing, trust accounting</td><td class="why"><b>4 workers.</b> Vertical B2B, and trust accounting is regulated.</td></tr>
+        <tr><td class="app">childcare</td><td class="lic">MIT</td><td class="does">Check-in, family messaging, tuition billing</td><td class="why"><b>3 workers, plus email.</b> Vertical B2B.</td></tr>
+        <tr><td class="app">property-management</td><td class="lic">MIT</td><td class="does">Leases, tenants, rent, maintenance</td><td class="why"><b>9 workers, 3 email.</b> Vertical B2B.</td></tr>
+        <tr><td class="app">shifts</td><td class="lic">MIT</td><td class="does">Availability, assignments, swaps</td><td class="why"><b>4 hosting calls</b> — it publishes shareable pages. Vertical B2B.</td></tr>
+        <tr><td class="app">hiring</td><td class="lic">MIT</td><td class="does">Job pages, pipeline, scorecards</td><td class="why"><b>3 hosting, 3 site.</b> Publishes public job pages — an exposure problem, not a packaging problem.</td></tr>
+        <tr><td class="app">invoicing</td><td class="lic">MIT</td><td class="does">Quotes, invoices, recurring billing</td><td class="why"><b>5 workers, 4 site, 3 email.</b> Payment links imply a payment processor.</td></tr>
+        <tr><td class="app">contracts</td><td class="lic">MIT</td><td class="does">Agreements, renewals, obligations</td><td class="why"><b>3 hosting, 4 ai.</b> Obligation extraction is the feature.</td></tr>
+        <tr><td class="app">survey</td><td class="lic">MIT</td><td class="does">Questionnaires, share links, analysis</td><td class="why"><b>1 worker call</b> for response hosting. Closest of this group — it becomes shippable the day a worker shim exists.</td></tr>
+        <tr><td class="app">whiteboard</td><td class="lic agpl">AGPL-3.0</td><td class="does">Infinite canvas, multiplayer</td><td class="why"><b>488 MB of source, 279 peer calls, 192 perms.</b> The biggest genuine gap in the catalogue, and a project of its own.</td></tr>
+
+        <tr class="grp"><td colspan="4">Multiplayer games <em>— the value is the online mode</em></td></tr>
+        <tr><td class="app">chess</td><td class="lic">MIT</td><td class="does">Chess, local or online</td><td class="why"><b>3 peer calls.</b> Solo play is local and free; the reason to install it is the peer mode, which needs signalling.</td></tr>
+        <tr><td class="app">checkers</td><td class="lic">MIT</td><td class="does">Checkers, local or online</td><td class="why">Same shape as chess.</td></tr>
+        <tr><td class="app">backgammon</td><td class="lic">MIT</td><td class="does">Backgammon, local or online</td><td class="why">Same shape as chess.</td></tr>
+
+        <tr class="grp"><td colspan="4">Later <em>— real gap, wrong weight</em></td></tr>
+        <tr><td class="app">building-design</td><td class="lic agpl">AGPL-3.0</td><td class="does">Browser BIM: walls, roofs, stairs, schedules</td><td class="why"><b>14 fs, 5 kv, 3 ui, 2 ai.</b> Bridge-clean and genuinely useful for a renovation — but a BIM editor is a large support surface, and AGPL.</td></tr>
+
+      </tbody>
+    </table>
+
+    <p class="sub" style="margin-top:26px;margin-bottom:0">Licence note: an app with no per-app licence inherits the repository's MIT. Nine apps carry AGPL-3.0 explicitly — <code>3d</code>, <code>building-design</code>, <code>email</code>, <code>notes</code>, <code>pdf</code>, <code>presentation</code>, <code>spreadsheet</code>, <code>video-studio</code>, <code>whiteboard</code>. Serving a modified AGPL app over the network obliges you to offer its source: publish the pinned SHA and the patch, and the obligation is met.</p>
+  </section>
+
+  <!-- ================= CONDITIONAL ================= -->
+  <section class="panel rv" id="conditional">
+    <h2>Conditional, not counted in the twenty</h2>
+    <p class="sub">Plausible later, but each needs a design decision that does not exist yet.</p>
+    <div class="twocol">
+      <div class="item"><b>qBittorrent</b><span>Waits on a supported VPN/network-mode design. The schema cannot express <code>network_mode: service:vpn</code>, and a public torrent client on the home IP is not a default worth shipping.</span></div>
+      <div class="item"><b>Collabora / OnlyOffice</b><span>Nextcloud office add-ons. Blocked on Nextcloud app management (<code>richdocuments</code>), not on another package.</span></div>
+      <div class="item"><b>immich-kiosk</b><span>Small and useful, but a companion to an existing app rather than a new suite category.</span></div>
+      <div class="item"><b>ntfy</b><span>A good notification hub for backups and monitoring, but no Homestead notification pipeline consumes it yet. Infrastructure first.</span></div>
+    </div>
+  </section>
+
+  <!-- ================= REJECTED ================= -->
+  <section class="panel rv" id="rejected">
+    <h2>Not planned, with reasons</h2>
+    <p class="sub">Recorded so a later review does not repeat the exercise. Most of these fail a hard gate; a few fail the “is this a household app?” test.</p>
+    <div class="twocol">
+      <div class="item"><b>Mail servers</b><span>Port 25, PTR/SPF/DKIM/DMARC, blocklist reputation and abuse handling are a different product. The largest operational trap in self-hosting.</span></div>
+      <div class="item"><b>Matrix, Element, Rocket.Chat, Mattermost, Zulip</b><span>Federation, heavy services, identity duplication with Authentik and Nextcloud.</span></div>
+      <div class="item"><b>Home Assistant</b><span>Needs host networking or device access for most integrations. Both are forbidden by the schema; needs an ADR first.</span></div>
+      <div class="item"><b>MinIO, Garage</b><span>Object storage is infrastructure, not a household app.</span></div>
+      <div class="item"><b>PhotoPrism, Piwigo, Photoview, Lychee, Ente</b><span>Immich already owns photos. A second gallery splits libraries and backups.</span></div>
+      <div class="item"><b>Seafile, ownCloud, Syncthing</b><span>Nextcloud owns files and sync. Syncthing also lacks SSO and needs discovery ports.</span></div>
+      <div class="item"><b>Portainer, Dockge, Watchtower, Homepage, Dashy, Homarr, Traefik, Caddy, NPM</b><span>Platform-owned, or directly conflicts with the Homestead dashboard, edge and update engine.</span></div>
+      <div class="item"><b>Grafana, Prometheus, Loki, Dozzle</b><span>Monitoring infrastructure. Homestead doctor, operations and Dockge cover the owner path.</span></div>
+      <div class="item"><b>WordPress, Ghost, WriteFreely</b><span>Public CMS workloads bring plugin maintenance and a different exposure posture.</span></div>
+      <div class="item"><b>OnlyOffice, Collabora, CryptPad, Grist</b><span>Overlaps the craft suite and Nextcloud. The missing piece is Nextcloud app wiring, not another package.</span></div>
+      <div class="item"><b>Stirling PDF, IT-Tools</b><span>Useful but stateless, and already covered in spirit by PdfCraft and the browser.</span></div>
+      <div class="item"><b>Karakeep, Wallabag, Miniflux</b><span>Linkding and FreshRSS cover the jobs with simpler stacks. Karakeep adds Chrome and search infrastructure.</span></div>
+      <div class="item"><b>Firefly III</b><span>Actual Budget is lighter and local-first. Firefly also needs MariaDB.</span></div>
+      <div class="item"><b>Docmost, Outline, Wiki.js</b><span>BookStack covers the need with a clearer OIDC and backup story. Docmost's SSO is edition-sensitive.</span></div>
+      <div class="item"><b>Cal.com, Rallly, Easy!Appointments</b><span>Scheduling needs reliable outbound email, which is out of scope.</span></div>
+      <div class="item"><b>Baïkal, Radicale</b><span>Nextcloud already provides CalDAV/CardDAV.</span></div>
+      <div class="item"><b>Tube Archivist, Pinchflat, MeTube</b><span>Downloaders add copyright risk, heavy dependencies and large media growth.</span></div>
+      <div class="item"><b>Passbolt, Bitwarden Server, Psono</b><span>Vaultwarden is the lightest path to the same job. Two password servers is not a suite.</span></div>
+      <div class="item"><b>Puter / Everything apps</b><span>Assessed separately above: eleven package cleanly through a bridge, and none is a fork. See <a href="#everything" style="color:var(--accent)">The Everything apps</a>.</span></div>
+    </div>
+  </section>
+
+  <!-- ================= DECISIONS ================= -->
+  <section class="panel rv" id="decisions">
+    <h2>What the owner decided</h2>
+    <p class="sub">The nine open questions are closed. Ordering changed as a result: F2 and F4 moved off the Wave 1 path.</p>
+    <table>
+      <thead><tr><th>Question</th><th>Decision</th></tr></thead>
+      <tbody>
+        <tr><td>Wave 1 SSO</td><td>Gated on F1. Uptime Kuma remains the documented local-auth exception inside the wave.</td></tr>
+        <tr><td>Secret delivery</td><td>Supervised entrypoint wrapper: 0600 file, exported into the app environment at start.</td></tr>
+        <tr><td>Community images</td><td>Accepted under a written policy — trusted publisher, multi-arch, pinned tags, provenance.</td></tr>
+        <tr><td>Git forge</td><td>Gitea. Forgejo is not packaged.</td></tr>
+        <tr><td>Media automation</td><td>Full stack in Wave 3: Prowlarr, Sonarr, Radarr, SABnzbd, Seerr.</td></tr>
+        <tr><td>Bundles</td><td>F5 lands before Wave 1.</td></tr>
+        <tr><td>Puter track</td><td>Reopened 2026-10-23. Package selected Everything apps in-repo at a pinned upstream commit with a Homestead-owned bridge — no fork, no vendored SDK.</td></tr>
+        <tr><td>Exposure posture</td><td>Local/overlay by default, including Vaultwarden, Gitea and BookStack. Widening is an explicit owner action.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap sig">
+    <span>Homestead — single-appliance, owner-operated</span>
+    <span>Source: docs/CATALOG_EXPANSION.md</span>
+  </div>
+</footer>
+
+<script>
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    }
+  }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+  document.querySelectorAll('.rv').forEach((el, i) => {
+    el.style.transitionDelay = Math.min(i * 22, 160) + 'ms';
+    io.observe(el);
+  });
+</script>
+</body>
+</html>

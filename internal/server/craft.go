@@ -22,8 +22,13 @@ import (
 // Craft manifest and build-context locations under the catalog
 // directory (S279). The packaging step copies images/craft there.
 const (
-	craftSubdir       = "craft"
-	craftContextSub   = "context"
+	craftSubdir     = "craft"
+	craftContextSub = "context"
+	// Everything bridge apps (ADR-057) ship beside the catalog, outside
+	// the signed craft manifest's context.
+	everythingSubdir  = "everything"
+	everythingContext = "context"
+	everythingSources = "sources"
 	craftManifestFile = "craft-manifest.yaml"
 	craftSigSuffix    = ".minisig"
 )
@@ -36,11 +41,13 @@ const (
 func (s *Server) MountCraft(st *store.Store, catalogDir, trustYAML string, builder craft.Builder) {
 	keys := release.NewCraftStore(st)
 	s.craft = &craft.Pipeline{
-		Keys:       keys.PublicKeys,
-		Store:      craft.NewStore(st),
-		Builder:    builder,
-		ContextDir: filepath.Join(catalogDir, craftSubdir, craftContextSub),
-		StagingDir: filepath.Join(layout.LibDir.Path, "craft-staging"),
+		Keys:             keys.PublicKeys,
+		Store:            craft.NewStore(st),
+		Builder:          builder,
+		ContextDir:       filepath.Join(catalogDir, craftSubdir, craftContextSub),
+		BridgeContextDir: filepath.Join(catalogDir, everythingSubdir, everythingContext),
+		BridgeSourcesDir: filepath.Join(catalogDir, everythingSubdir, everythingSources),
+		StagingDir:       filepath.Join(layout.LibDir.Path, "craft-staging"),
 	}
 	catalog.CraftChecker = s.craft.CheckImage
 	catalog.CraftRecordedID = s.craft.RecordedID
@@ -204,7 +211,13 @@ func (h *craftHandlers) plan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := h.request(body, op.Session.Username)
-	plan, verdict, err := h.pipe.Check(r.Context(), req)
+	check := func() (craft.Plan, craft.Verdict, error) { return h.pipe.Check(r.Context(), req) }
+	if h.pipe.IsBridgeApp(body.App) {
+		check = func() (craft.Plan, craft.Verdict, error) {
+			return h.pipe.BridgeCheck(r.Context(), body.App, op.Session.Username)
+		}
+	}
+	plan, verdict, err := check()
 	planJSON, _ := json.Marshal(map[string]any{"app": body.App, "manifest": req.ManifestPath, "signature": req.SignaturePath,
 		"artifact": body.Artifact, "allow_older": body.AllowOlder})
 	entry := audit.Entry{Actor: op.Session.Username, Action: "craft.plan", Plan: string(planJSON)}
@@ -236,8 +249,15 @@ func (h *craftHandlers) build(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := h.request(body, op.Session.Username)
+	bridge := h.pipe.IsBridgeApp(body.App)
 	// Refuse early and loudly; the operation re-verifies everything.
-	plan, _, err := h.pipe.Check(r.Context(), req)
+	var plan craft.Plan
+	var err error
+	if bridge {
+		plan, _, err = h.pipe.BridgeCheck(r.Context(), body.App, op.Session.Username)
+	} else {
+		plan, _, err = h.pipe.Check(r.Context(), req)
+	}
 	if err != nil {
 		status := refusalStatus(err)
 		var ce *craft.CheckError
@@ -248,7 +268,12 @@ func (h *craftHandlers) build(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), status)
 		return
 	}
-	def, err := h.pipe.Definition(req)
+	var def operation.Definition
+	if bridge {
+		def, err = h.pipe.BridgeDefinition(body.App, op.Session.Username)
+	} else {
+		def, err = h.pipe.Definition(req)
+	}
 	if err != nil {
 		http.Error(w, err.Error(), refusalStatus(err))
 		return

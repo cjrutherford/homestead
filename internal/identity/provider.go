@@ -111,6 +111,14 @@ func ValidateProvider(p Provider) error {
 	return nil
 }
 
+// Builtins returns the identity providers this build ships, in name
+// order. Setup flows seed a Registry from the same list; validation paths
+// that run before a flow exists read it directly, so a manifest can never
+// name a provider the appliance cannot drive (S341).
+func Builtins() []Provider {
+	return []Provider{NewAuthentik()}
+}
+
 // Registry maps provider names to implementations for setup flows
 // (S204) to enumerate. Providers register themselves; the zero value
 // is not usable, use NewRegistry.

@@ -1,0 +1,116 @@
+# Vaultwarden password manager (S345): the first Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+#
+# Local signup is closed (S454): accounts are made by signing in through
+# Authentik (S414, Vaultwarden 1.35.0 and later, set by environment alone),
+# where each person chooses their own master password at first sign-in
+# (ADR-059 exception). The admin page is deliberately off (no ADMIN_TOKEN)
+# because a generated token would turn an administrative surface on by
+# default; enabling it is a separate owner decision (docs/DEFERRED.md).
+name: vaultwarden
+publish: host  # ADR-061
+publish_reason: owner_choice
+version: 1.37.4
+title: Vaultwarden
+blurb: Passwords and passkeys you control.
+description: Vaultwarden is a lightweight, Bitwarden-compatible password
+  manager. The official browser extensions and mobile apps sync against it,
+  so the vault works the same way a hosted one would, while the data stays
+  on your appliance. Registration is closed, so people join by signing in through
+  Authentik and choosing their own master password. The administrative page is
+  off until the owner turns it on deliberately.
+category: passwords
+icon: mdi:shield-key
+services:
+- name: vaultwarden
+  image: vaultwarden/server:1.37.4
+  publisher: upstream
+  exposes: web
+  containerport: 80
+  environment:
+    # The edge hostname is filled at render time. Passkeys and invitation
+    # links need the exact URL the browser uses, so the domain must follow
+    # the route rather than a hard-coded address.
+    DOMAIN: "{{app_url}}"
+    # Local signup is closed (S454, ADR-059): no one can register a vault
+    # by hand. People get their account from Authentik sign-in.
+    SIGNUPS_ALLOWED: "false"
+  # Image VOLUME: /data (SQLite database, attachments, sends, RSA keys).
+  # Recent image releases run as uid/gid 1000; the vault lives on
+  # application storage and is small.
+  data:
+  - target: /data
+    class: application
+    subpath: data
+    uid: 1000
+    gid: 1000
+requirements:
+  memorymb: 256
+  cpucount: 1
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 536870912
+  # The container listens on 80 (ROCKET_PORT); routes proxy to it and no
+  # host port is published by default.
+exposure:
+  package: vaultwarden
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Passwords leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+sso:
+  class: optional
+  protocols: [oidc]
+  # App sign-in through Authentik (S414): Vaultwarden's built-in OpenID
+  # Connect. SSO_ONLY is deliberately not set; the master password login
+  # form stays but cannot create accounts (signups closed). The redirect is
+  # <DOMAIN>/identity/connect/oidc-signin, so sign-in works at the
+  # address DOMAIN names (the app's address). SSO_AUTHORITY must equal
+  # Authentik's issuer exactly, trailing slash included. Homestead's
+  # Authentik provider has no refresh-token scope, so
+  # SSO_AUTH_ONLY_NOT_SESSION keeps Vaultwarden's own session lifetime
+  # (2 hours, 7 days idle) instead of the 5 minute access token. The
+  # client secret is read from a file by Vaultwarden itself (_FILE).
+  oidc:
+    adapter: env-oidc
+    service: vaultwarden
+    env:
+      redirectpaths: ["/identity/connect/oidc-signin"]
+      signinpath: /
+      verifiedemail: true
+      secret: oidc_client_secret
+      # The HTTP client takes extra roots from SSL_CERT_FILE next to the
+      # image's SSL_CERT_DIR, so the combined bundle (host public CAs plus
+      # the appliance root) is set only for the appliance's own issuer.
+      trust: SSL_CERT_FILE
+      trustbundle: combined
+      warnings:
+      - Signing in through Authentik replaces only the login identity. Everyone still needs their own master password, which Authentik does not hold and cannot reset; a forgotten master password cannot be recovered. Local registration is closed, so an account exists only for people Authentik admits (the app's groups).
+      - Vaultwarden joins an Authentik person to an existing vault account with the same email address. Authentik sends email_verified=false, so Homestead's groups claim says true for people the app's groups admit; keep the emails of your Authentik people accurate. Sign-in works at the address Vaultwarden is set up for (its DOMAIN, the app's address); other addresses for the same app cannot complete sign-in.
+      set:
+        SSO_ENABLED: "true"
+        SSO_AUTHORITY: "{{issuer}}"
+        SSO_CLIENT_ID: "{{client_id}}"
+        SSO_AUTH_ONLY_NOT_SESSION: "true"
+        # Authentik 2026.8 sends email_verified=false for every user and
+        # Vaultwarden refuses that (SSO_ALLOW_UNKNOWN_EMAIL_VERIFICATION
+        # only covers an absent claim). verifiedemail puts
+        # email_verified=true in the groups claim, so the scope is asked
+        # for (S454).
+        SSO_SCOPES: "email profile groups"
+secrets:
+- name: oidc_client_secret
+  # Authentik's client secret for Vaultwarden; Homestead generates it,
+  # hands it to Authentik, and gives Vaultwarden the file.
+  consumers:
+  - service: vaultwarden
+    env: SSO_CLIENT_SECRET_FILE
+integrations:
+- kind: identity
+  target: authentik
+  note: People sign in with Authentik (applied at install) and choose their own master password at first sign-in; registration is closed, so no one else can create a vault.

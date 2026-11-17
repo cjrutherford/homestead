@@ -78,7 +78,11 @@ func printMyApps(stdout io.Writer, apps []apiclient.MyApp, asJSON bool, empty st
 		return exitOK
 	}
 	for _, a := range apps {
-		fmt.Fprintf(stdout, "%s  %s  %s  %s\n", a.Name, a.Title, a.Role, a.URL)
+		public := a.PublicURL
+		if public == "" {
+			public = "-"
+		}
+		fmt.Fprintf(stdout, "%s  %s  %s  local %s  public %s\n", a.Name, a.Title, a.Role, a.LocalURL, public)
 	}
 	return exitOK
 }

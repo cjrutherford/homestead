@@ -162,6 +162,11 @@ func hostMatches(host string, names []string) bool {
 // dashboardFront is the front wrapper of the dashboard socket.
 func (s *Server) dashboardFront(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No page of the dashboard is framed, not even by an app page on
+		// the shared origin (ADR-061 §4, S470). A handler that sets its own
+		// policy (a craft wrapper) replaces these.
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
 		client, ok := forwardedClient(r)
 		if !ok {
 			http.Error(w, "X-Forwarded-For must be exactly one client address", http.StatusBadRequest)
@@ -184,7 +189,7 @@ func (s *Server) dashboardFront(next http.Handler) http.Handler {
 			}
 		}
 		_, hasBearer := bearerToken(r.Header.Get("Authorization"))
-		_, cookieErr := r.Cookie(SessionCookieName)
+		_, cookieErr := sessionCookie(r)
 		hasCookie := cookieErr == nil
 		if hasBearer && hasCookie {
 			http.Error(w, "send either a session cookie or a bearer token, not both", http.StatusBadRequest)

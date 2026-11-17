@@ -338,9 +338,10 @@ func TestDoctorAppContainers(t *testing.T) {
 	if c := only(t, probeAppContainers(ctx, &lazyContainers{}, m)); c.Status != doctor.StatusFail || !strings.Contains(c.Detail, "does not exist") {
 		t.Fatalf("missing: %+v", c)
 	}
+	// S462: a service stopped by hand exits 0 and is still a fault.
 	build("exited", "Exited (0) 3 minutes ago", -1)
-	if c := only(t, probeAppContainers(ctx, &lazyContainers{}, m)); c.Status != doctor.StatusOK {
-		t.Fatalf("finished job: %+v", c)
+	if c := only(t, probeAppContainers(ctx, &lazyContainers{}, m)); c.Status != doctor.StatusFail || !strings.Contains(c.Detail, "is exited") {
+		t.Fatalf("stopped by hand: %+v", c)
 	}
 	migrationContainers = func(context.Context) ([]docker.Container, error) { return nil, errors.New("no engine") }
 	if c := only(t, probeAppContainers(ctx, &lazyContainers{}, m)); c.Status != doctor.StatusUnknown {

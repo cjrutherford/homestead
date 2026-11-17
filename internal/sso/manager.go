@@ -387,7 +387,7 @@ func (m *Manager) Plan(ctx context.Context, req PlanRequest, actor string) (Plan
 		Spec: spec, Digest: digestOf(spec), ExpiresAt: m.now().Add(PlanTTL),
 		Untouched: []string{
 			"users (other than finding the linked owner) and groups without the " + GroupPrefix + " prefix", "flows and stages other than Homestead's own recovery flow (the two stock flows named here are only referenced)",
-			"policies and bindings other than the application's own", "every other application and provider",
+			"policies and bindings other than the application's own and the recovery flow's owner-links-only policy", "every other application and provider",
 			"Authentik's own settings, except that the default brand gets the recovery flow when it has none",
 		},
 	}
@@ -442,7 +442,7 @@ func planWarnings(spec Spec) []string {
 	}
 	if spec.Access != nil {
 		if spec.Access.OwnerSub == "" {
-			w = append(w, "No owner is linked yet, so the dashboard application is not bound to "+OwnerGroup+" and the owner group stays empty. Link the owner, then plan sign-in again to close the application to everyone else.")
+			w = append(w, "No owner is linked yet, so the dashboard application is not bound to any group and the owner group stays empty: binding now would stop you signing in to Authentik to link. Homestead still lets in only the linked owner and active people. Link the owner, then plan sign-in again (the tunnel setup does this for you) to close the application to everyone else.")
 		} else {
 			w = append(w, "The dashboard application is bound to the group "+OwnerGroup+", which holds only the linked owner. The (issuer, subject) check is unchanged.")
 		}
@@ -873,6 +873,21 @@ func rebase(endpoint, origin string) string {
 	}
 	u.Scheme, u.Host = o.Scheme, o.Host
 	return u.String()
+}
+
+// PublicLink moves a link Authentik built for its local address onto its
+// public (tunnel) address, keeping the path and query. It returns "" when
+// there is no public address or the link cannot be read.
+func PublicLink(link, publicBase string) string {
+	if strings.TrimSpace(link) == "" || strings.TrimSpace(publicBase) == "" {
+		return ""
+	}
+	u, err := url.Parse(link)
+	o, err2 := url.Parse(publicBase)
+	if err != nil || err2 != nil || u.Host == "" || o.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || (o.Scheme != "http" && o.Scheme != "https") {
+		return ""
+	}
+	return rebase(link, publicBase)
 }
 
 // OriginFor selects the redirect origin for a request by exact match of

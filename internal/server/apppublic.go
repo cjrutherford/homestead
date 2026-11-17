@@ -13,6 +13,7 @@ import (
 
 	"homestead/internal/appsso"
 	"homestead/internal/catalog"
+	"homestead/internal/cert"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
 	"homestead/internal/router"
@@ -44,13 +45,16 @@ type appPublic struct {
 }
 
 type appPublicStatus struct {
-	App       string           `json:"app"`
-	Available bool             `json:"available"`
-	Reason    string           `json:"reason,omitempty"`
-	TunnelID  string           `json:"tunnel_id,omitempty"`
-	Tunnel    string           `json:"tunnel,omitempty"`
-	Routes    []appPublicRoute `json:"routes"`
-	Proposed  string           `json:"proposed,omitempty"`
+	App       string `json:"app"`
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// NeverPublish is the manifest's publish: never (S451, ADR-061): adding a name
+	// is refused and not offered; an existing name can still be removed.
+	NeverPublish bool             `json:"never_publish,omitempty"`
+	TunnelID     string           `json:"tunnel_id,omitempty"`
+	Tunnel       string           `json:"tunnel,omitempty"`
+	Routes       []appPublicRoute `json:"routes"`
+	Proposed     string           `json:"proposed,omitempty"`
 	// ProposedURL is the public address of a path app (ADR-044).
 	ProposedURL string `json:"proposed_url,omitempty"`
 	SignIn      bool   `json:"sign_in"`
@@ -191,6 +195,13 @@ func (p *appPublic) status(w http.ResponseWriter, r *http.Request) {
 		names = append(names, route.Public...)
 	}
 	out.Coverage = statusCoverage(r.Context(), p.secrets, names)
+	if refusal := f.manifest.PublicRefusal(); refusal != "" {
+		out.NeverPublish = true
+		out.Reason = refusal
+		out.Available = len(names) > 0
+		writeJSON(w, out)
+		return
+	}
 	// Before the install the name is proposed too, so the install wizard
 	// can offer it (S313); planning it needs before_install.
 	beforeInstall := !f.installed && f.tunnelID != "" && f.manifest.Name != authentikPackage
@@ -253,8 +264,11 @@ type appPublicRequest struct {
 	// on the route its install creates (S313): the install wizard and
 	// `apps install --public` review it with the install plan. It is a
 	// plan only. Apply takes the same request without it once the app is
-	// installed, and the digest must still match then.
+	// installed, and the digest must still match then. Managed installs
+	// request the anticipated post-sign-in state for their original approval.
 	BeforeInstall bool `json:"before_install,omitempty"`
+	// AnticipateSignIn previews publication after managed install sign-in.
+	AnticipateSignIn bool `json:"anticipate_sign_in,omitempty"`
 }
 
 // appPublicPlan is one public name added to or removed from an app.
@@ -275,14 +289,19 @@ type appPublicPlan struct {
 	Before []string `json:"connector_before"`
 	After  []string `json:"connector_after"`
 	SignIn string   `json:"sign_in,omitempty"`
+	// SignInDigest is the digest of the app sign-in plan the change
+	// applies after the edge steps (S399); approving this plan approves
+	// that sign-in change. Empty when sign-in is left alone.
+	SignInDigest string `json:"sign_in_digest,omitempty"`
 	// AppSettings is what the app's own settings get (S313): Nextcloud's
 	// trusted domains follow its public names.
 	AppSettings []string `json:"app_settings"`
 	// Coverage says whether Cloudflare has a certificate for the added
 	// name (S312); an uncovered name is also a warning.
-	Coverage []publicNameCoverage `json:"coverage"`
-	Warnings []string             `json:"warnings"`
-	Digest   string               `json:"digest"`
+	Coverage         []publicNameCoverage `json:"coverage"`
+	CertificateState string               `json:"certificate_state,omitempty"`
+	Warnings         []string             `json:"warnings"`
+	Digest           string               `json:"digest"`
 
 	zoneID   string
 	replaces []router.DNSRecord
@@ -290,6 +309,9 @@ type appPublicPlan struct {
 	owned    []router.OwnedRecord
 	restores []router.ReplacedRecord
 	manifest catalog.Manifest
+	// env is the base-URL setting the app's stack gets before sign-in
+	// (S407); the same changes are listed in AppSettings.
+	env []catalog.ConfigChange
 }
 
 func (p appPublicPlan) digest() string {
@@ -304,6 +326,10 @@ func (p appPublicPlan) digest() string {
 	}
 	if p.keep != nil {
 		fmt.Fprintf(h, "\nkeep=%s", p.keep.ID)
+	}
+	if len(p.env) > 0 {
+		env, _ := json.Marshal(p.env)
+		fmt.Fprintf(h, "\nenv=%s", env)
 	}
 	for _, record := range p.owned {
 		fmt.Fprintf(h, "\nowned=%s", record.RecordID)
@@ -334,9 +360,30 @@ func tunnelNameMap(routes []docker.Route) map[docker.Hostname][]docker.Hostname 
 
 // buildPlan reads Cloudflare and the store and changes nothing.
 func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicRequest) (appPublicPlan, error) {
+	return p.buildPlanState(ctx, name, req, false)
+}
+
+// buildAnticipatedSignInPlan is only a preview of the state after a future
+// successful sign-in setup. It is not proof of readiness and cannot apply a
+// plan. The caller must verify sign-in and grants before using the original
+// approved digest with start, which always reads actual state.
+func (p *appPublic) buildAnticipatedSignInPlan(ctx context.Context, name string, req appPublicRequest) (appPublicPlan, error) {
+	return p.buildPlanState(ctx, name, req, true)
+}
+
+func (p *appPublic) buildPlanState(ctx context.Context, name string, req appPublicRequest, anticipateSignIn bool) (appPublicPlan, error) {
 	f, err := p.facts(name)
 	if err != nil {
 		return appPublicPlan{}, err
+	}
+	if refusal := f.manifest.PublicRefusal(); refusal != "" && req.Enabled != nil && *req.Enabled {
+		return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s", refusal)
+	}
+	if anticipateSignIn {
+		if !req.BeforeInstall || f.installed || f.signIn || f.manifest.SSO.OIDC == nil {
+			return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "anticipated sign-in requires an uninstalled app with OIDC and no existing sign-in")
+		}
+		f.signIn = true
 	}
 	if req.BeforeInstall && !f.installed && f.manifest.Name != authentikPackage {
 		if err := beforeInstall(&f, req); err != nil {
@@ -371,6 +418,8 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 		err = p.planPathAdd(ctx, client, token, f, hostname, req.Route, &plan)
 	case path:
 		err = p.planPathRemove(f, hostname, &plan)
+	case *req.Enabled && alreadyPublicName(f, hostname) != "":
+		err = p.planRefresh(f, hostname, alreadyPublicName(f, hostname), &plan)
 	case *req.Enabled:
 		err = p.planAdd(ctx, client, token, f, hostname, req.Route, &plan)
 	default:
@@ -398,25 +447,257 @@ func (p *appPublic) buildPlan(ctx context.Context, name string, req appPublicReq
 	if plan.After == nil {
 		plan.After = []string{}
 	}
-	if f.signIn {
-		verb := "accepts"
-		if plan.Action == "remove" {
-			verb = "stops accepting"
+	if !path {
+		if err := p.planAppURL(f, &plan); err != nil {
+			return appPublicPlan{}, err
 		}
-		address := "https://" + plan.Hostname
-		if path {
-			address = plan.URL
+		if plan.Action == "refresh" && len(plan.env) == 0 {
+			return appPublicPlan{}, refusePlan(http.StatusUnprocessableEntity, "%s is already on the tunnel and its base URL already uses it", hostname)
 		}
-		plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
-			verb + " " + address + "."
 	}
-	if plan.Action == "add" {
+	if !path && f.manifest.SingleOriginSignIn && len(f.routes) > 0 && plan.Action != "refresh" {
+		plan.Warnings = append(plan.Warnings, singleOriginWarning(f.routes[0], plan))
+	}
+	if f.signIn && plan.Action != "refresh" {
+		if anticipateSignIn && p.s.appSignIn != nil && p.s.appSignIn.tokenKept() {
+			// The install applies sign-in with the public name already in its
+			// redirect list, so after install, with the Authentik token kept,
+			// this step's plan reads "no change". Say the same now, or the
+			// approved digest never matches the plan the setup re-checks (S444).
+			plan.SignIn = "App sign-in is on and needs no change."
+		} else if !p.planSignIn(f, path, &plan) {
+			verb := "accepts"
+			if plan.Action == "remove" {
+				verb = "stops accepting"
+			}
+			address := "https://" + plan.Hostname
+			if path {
+				address = plan.URL
+			}
+			plan.SignIn = "App sign-in is on: afterwards, re-plan it on this page and approve it, so sign-in " +
+				verb + " " + address + "."
+		}
+	}
+	if plan.Action == "refresh" {
+		// Only the app's base URL changes: the name is already live.
+	} else if plan.Action == "add" {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, []string{plan.Hostname}, nil)...)
 	} else {
 		plan.AppSettings = append(plan.AppSettings, appsso.HostSettings(f.manifest, nil, []string{plan.Hostname})...)
 	}
 	plan.Digest = plan.digest()
 	return plan, nil
+}
+
+// alreadyPublicName returns the app route that already carries hostname
+// on the tunnel, or "" (S407).
+func alreadyPublicName(f appPublicFacts, hostname string) string {
+	if hostname == "" {
+		return ""
+	}
+	for _, r := range f.routes {
+		if r.IsPath() {
+			continue
+		}
+		for _, n := range r.Tunnel {
+			if strings.EqualFold(string(n), hostname) {
+				return string(r.Host)
+			}
+		}
+	}
+	return ""
+}
+
+// planRefresh plans bringing an already-public app's base URL in step
+// with its public name (S407): the fix for an app published before its
+// base URL followed the public address. No DNS or edge change; planAppURL
+// fills the setting and the caller refuses a refresh with nothing to do.
+func (p *appPublic) planRefresh(f appPublicFacts, hostname, route string, plan *appPublicPlan) error {
+	plan.Action = "refresh"
+	plan.Hostname = hostname
+	plan.Route = route
+	return nil
+}
+
+// planAppURL puts the base-URL setting the change calls for in the plan
+// (S407): for an installed app whose manifest uses AppURLToken, the
+// token's value once the public names are as the plan leaves them,
+// compared with the value the stack has now.
+func (p *appPublic) planAppURL(f appPublicFacts, plan *appPublicPlan) error {
+	if !f.installed || f.manifest.ServedByPath() {
+		return nil
+	}
+	var names []docker.Hostname
+	for _, r := range f.routes {
+		if strings.EqualFold(string(r.Host), plan.Route) {
+			names = r.Tunnel
+		}
+	}
+	public := ""
+	for _, n := range names {
+		if plan.Action == "remove" && strings.EqualFold(string(n), plan.Hostname) {
+			continue
+		}
+		public = string(n)
+		break
+	}
+	if public == "" && plan.Action != "remove" {
+		public = plan.Hostname
+	}
+	if plan.Action == "refresh" {
+		public = plan.Hostname
+	}
+	changes, err := catalog.AppURLChanges(f.manifest, stackDirFor(f.manifest.Name), plan.Route, public)
+	if err != nil {
+		return refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	bySvc := map[string]*catalog.ConfigChange{}
+	for _, c := range changes {
+		entry := bySvc[c.Service]
+		if entry == nil {
+			plan.env = append(plan.env, catalog.ConfigChange{Service: c.Service, Set: map[string]string{}})
+			entry = &plan.env[len(plan.env)-1]
+			bySvc[c.Service] = entry
+		}
+		entry.Set[c.Key] = c.New
+		old := c.Old
+		if old == "" {
+			old = "(not set)"
+		}
+		plan.AppSettings = append(plan.AppSettings, fmt.Sprintf("%s: %s: %s -> %s (the app restarts)", c.Service, c.Key, old, c.New))
+	}
+	return nil
+}
+
+// appURLSteps writes the planned base URL and brings the stack up with
+// it, as the app move does (S407); they run before sign-in.
+func (p *appPublic) appURLSteps(plan appPublicPlan) ([]operation.StepDef, error) {
+	if len(plan.env) == 0 {
+		return nil, nil
+	}
+	var secretStore catalog.SecretStore
+	if p.secrets != nil {
+		secretStore = p.secrets
+	}
+	configure, err := moveConfigure(catalog.ConfigPlan{Manifest: plan.manifest, Changes: plan.env},
+		stackDirFor(plan.App), plan.App, p.st, secretStore)
+	if err != nil {
+		return nil, refusePlan(http.StatusUnprocessableEntity, "%v", err)
+	}
+	return configure.Steps, nil
+}
+
+// planSignIn plans the app's sign-in for the names after the change and
+// puts what moves in the plan (S399). It returns false when sign-in is
+// left for the owner to re-plan: the change cannot be previewed, the
+// Authentik API token is not kept, or nothing about sign-in changes.
+func (p *appPublic) planSignIn(f appPublicFacts, path bool, plan *appPublicPlan) bool {
+	a := p.s.appSignIn
+	if a == nil || !f.installed || f.manifest.SSO.OIDC == nil || !a.tokenKept() {
+		return false
+	}
+	set, err := loadEdgeRoutes(p.st)
+	if err != nil {
+		return false
+	}
+	routes := append([]docker.Route(nil), set.Routes...)
+	for i, r := range routes {
+		if !strings.EqualFold(string(r.Host), plan.Route) {
+			continue
+		}
+		switch {
+		case path:
+			r.Published = plan.Action == "add"
+		case plan.Action == "add":
+			r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(plan.Hostname))
+		default:
+			var kept []docker.Hostname
+			for _, n := range r.Tunnel {
+				if !strings.EqualFold(string(n), plan.Hostname) {
+					kept = append(kept, n)
+				}
+			}
+			r.Tunnel = kept
+		}
+		routes[i] = r
+	}
+	set.Routes = routes
+	in, err := appSignInInputsFrom(p.st, a.m, f.manifest, set, p.catalogDir)
+	if err != nil || in.Applied == nil {
+		return false
+	}
+	next, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		return false
+	}
+	var lines []string
+	if next.Issuer != in.Applied.Issuer {
+		lines = append(lines, fmt.Sprintf("moves to the %s issuer %s (now %s)", map[bool]string{true: "public", false: "local"}[plan.Action == "add"], next.Issuer, in.Applied.Issuer))
+	}
+	if added, removed := listChanges(in.Applied.RedirectURIs, next.RedirectURIs); len(added)+len(removed) > 0 {
+		if len(added) > 0 {
+			lines = append(lines, "adds redirect URI "+strings.Join(added, ", "))
+		}
+		if len(removed) > 0 {
+			lines = append(lines, "removes redirect URI "+strings.Join(removed, ", "))
+		}
+	}
+	if len(lines) == 0 {
+		// Nothing changes: no re-plan to ask for, but a public issuer that
+		// is not served yet is still worth saying (S400). The sign-in
+		// plan's own warnings were shown with the sign-in review, so they
+		// are not repeated here (S444: they made the install-time public
+		// plan differ from the one approved before install).
+		plan.SignIn = "App sign-in is on and needs no change."
+		return true
+	}
+	plan.Warnings = append(plan.Warnings, next.Warnings...)
+	plan.SignIn = "App sign-in is on and is updated in this same change with the kept Authentik API token: it " + strings.Join(lines, "; ") + "."
+	plan.SignInDigest = next.Digest
+	return true
+}
+
+// listChanges is what next has that old lacks, and the reverse.
+func listChanges(old, next []string) (added, removed []string) {
+	has := func(list []string, v string) bool {
+		for _, x := range list {
+			if x == v {
+				return true
+			}
+		}
+		return false
+	}
+	for _, v := range next {
+		if !has(old, v) {
+			added = append(added, v)
+		}
+	}
+	for _, v := range old {
+		if !has(next, v) {
+			removed = append(removed, v)
+		}
+	}
+	return added, removed
+}
+
+// signInStep brings the app's sign-in in step once the name is live
+// (S399): the plan approved with the public plan, applied through the
+// app sign-in path. A failure leaves the name as it is and says so.
+func (p *appPublic) signInStep(plan appPublicPlan, actor string) operation.StepDef {
+	return operation.StepDef{Name: "sign-in", Run: func(ctx context.Context) error {
+		state := "is public"
+		if plan.Action == "remove" {
+			state = "is no longer public"
+		}
+		if p.s.appSignIn == nil {
+			return fmt.Errorf("%s %s, but app sign-in is not available, so its sign-in still uses the old issuer; re-plan it from its card", plan.App, state)
+		}
+		err := reapplyAppSignIn(ctx, p.s.appSignIn, cert.IssuerMove{App: plan.App, Digest: plan.SignInDigest}, actor)
+		if err != nil {
+			return fmt.Errorf("%s %s, but its sign-in still uses the old issuer: %w; re-plan it from its card (homesteadctl apps sign-in plan %s) and approve it", plan.App, state, err, plan.App)
+		}
+		return nil
+	}}
 }
 
 // beforeInstall stands the route the install creates in for the app's
@@ -550,14 +831,15 @@ func (p *appPublic) planAdd(ctx context.Context, client *router.TunnelClient, to
 	}
 	plan.replaces = change.Replaces
 	plan.DNS = append(plan.DNS, change)
-	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{hostname})
+	coverage, warnings, fingerprint, err := publicationCoverage(ctx, client, token, zone, hostname)
 	if err != nil {
 		return err
 	}
 	plan.Coverage = coverage
+	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
-		"Anyone on the internet can reach "+f.manifest.Title+" at https://"+hostname+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.")
+		openToInternetWarning(f.manifest, f.signIn, "https://"+hostname, ""))
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
@@ -598,16 +880,21 @@ func (p *appPublic) planPathAdd(ctx context.Context, client *router.TunnelClient
 		return refusePlan(http.StatusUnprocessableEntity, "%s is not in the tunnel's Cloudflare zone", plan.Hostname)
 	}
 	plan.Zone, plan.zoneID = zone.Name, zone.ID
-	coverage, warnings, err := certificateCoverage(ctx, client, token, zone, []string{plan.Hostname})
+	coverage, warnings, fingerprint, err := publicationCoverage(ctx, client, token, zone, plan.Hostname)
 	if err != nil {
 		return err
 	}
 	plan.Coverage = coverage
+	plan.CertificateState = fingerprint
 	plan.Warnings = append(plan.Warnings, warnings...)
 	plan.Warnings = append(plan.Warnings,
 		"No DNS record changes: "+f.manifest.Title+" answers at "+plan.URL+", under the dashboard's public name the tunnel already carries.",
-		"Anyone on the internet can reach "+f.manifest.Title+" at "+plan.URL+". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it.",
+		openToInternetWarning(f.manifest, f.signIn, plan.URL, r.Path),
+		lanPathRedirectWarning(f, *plan),
 		"It shares one web origin with the dashboard and the other published apps (ADR-044): a flaw in one of them can reach the others in the same browser.")
+	if w := cookiePathWarning(f.manifest); w != "" {
+		plan.Warnings = append(plan.Warnings, w)
+	}
 	if !f.signIn && f.manifest.SSO.OIDC != nil {
 		plan.Warnings = append(plan.Warnings, "App sign-in through Authentik is off. Turning it on first is recommended.")
 	}
@@ -632,8 +919,29 @@ func (p *appPublic) planPathRemove(f appPublicFacts, hostname string, plan *appP
 		return err
 	}
 	plan.Warnings = append(plan.Warnings,
-		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.")
+		"No DNS record changes: "+plan.URL+" answers 404 on the public name afterwards; the app stays on its local addresses.",
+		lanPathRedirectWarning(f, *plan))
+	plan.Warnings = append(plan.Warnings, p.gateMoveWarnings(f, false)...)
 	return nil
+}
+
+// gateMoveWarnings name the other gated apps whose local address moves
+// because publishing or unpublishing this one moves the shared gate's
+// canonical name (S504, ADR-062 section 5). The lines are part of the
+// plan, so the digest covers them.
+func (p *appPublic) gateMoveWarnings(f appPublicFacts, publish bool) []string {
+	r := f.routes[0]
+	move := docker.GateCanonicalMove(f.all, r.Path, func(x *docker.Route) { x.Published = publish })
+	if !move.Moved() {
+		return nil
+	}
+	titles := gateTitles(p.catalogDir, f.all)
+	return move.Lines(func(x docker.Route) string {
+		if t := titles[x.Path]; t != "" {
+			return t
+		}
+		return x.Path
+	})
 }
 
 // removeZone names the zone a removed name lives in: the stored one,
@@ -719,6 +1027,10 @@ func (p *appPublic) decode(w http.ResponseWriter, r *http.Request, apply bool) (
 		http.Error(w, "a public name is applied once the app is installed: apply the same plan without before_install", http.StatusBadRequest)
 		return req, false
 	}
+	if req.AnticipateSignIn && (apply || !req.BeforeInstall || req.Enabled == nil || !*req.Enabled) {
+		http.Error(w, "anticipated sign-in is only available for a public install plan", http.StatusBadRequest)
+		return req, false
+	}
 	if apply && req.Digest == "" {
 		http.Error(w, "digest is required: review the plan, then approve it with its digest", http.StatusBadRequest)
 		return req, false
@@ -735,7 +1047,11 @@ func (p *appPublic) plan(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	plan, err := p.buildPlan(r.Context(), r.PathValue("name"), req)
+	build := p.buildPlan
+	if req.AnticipateSignIn {
+		build = p.buildAnticipatedSignInPlan
+	}
+	plan, err := build(r.Context(), r.PathValue("name"), req)
 	if err != nil {
 		p.writeError(w, err)
 		return
@@ -790,6 +1106,18 @@ func (p *appPublic) start(ctx context.Context, name string, req appPublicRequest
 	} else if plan.Action == "remove" {
 		def = appPublicRemoveDefinition(p.st, token, plan)
 		action, detail = "app.public.remove", fmt.Sprintf("%s: %s off tunnel %s", plan.App, plan.Hostname, plan.Tunnel)
+	}
+	if plan.Action == "refresh" {
+		def = operation.Definition{Type: "app.public.refresh"}
+		action, detail = "app.public.refresh", fmt.Sprintf("%s: base URL follows %s", plan.App, plan.Hostname)
+	}
+	urlSteps, err := p.appURLSteps(plan)
+	if err != nil {
+		return 0, err
+	}
+	def.Steps = append(def.Steps, urlSteps...)
+	if plan.SignInDigest != "" {
+		def.Steps = append(def.Steps, p.signInStep(plan, actor))
 	}
 	runner := operation.NewRunner(p.st)
 	op, err := runner.Start(ctx, def, "")
@@ -1025,4 +1353,74 @@ func appPublicPathDefinition(st *store.Store, plan appPublicPlan) operation.Defi
 		typ, steps = "app.public.remove", []operation.StepDef{edge, hosts}
 	}
 	return operation.Definition{Type: typ, Steps: steps}
+}
+
+// singleOriginWarning previews the edge redirect of a single-origin app
+// (ADR-060): its local names redirect to the public name while it is
+// published, and stop when it is not.
+func singleOriginWarning(r docker.Route, plan appPublicPlan) string {
+	names := make([]string, 0, len(r.Names()))
+	for _, n := range r.Names() {
+		names = append(names, string(n))
+	}
+	local := strings.Join(names, " and ")
+	if plan.Action == "remove" {
+		return "Edge change: " + local + " stop redirecting to " + plan.Hostname + " (ADR-060); the app is served on its local names again."
+	}
+	return "Edge change: " + local + " redirect (307, path and query kept) to https://" + plan.Hostname +
+		", because this app can only sign in on one address (ADR-060). Local clients then reach it through the tunnel and the internet, and cannot use it if either is down; unpublish it to bring the local names back."
+}
+
+// lanPathRedirectWarning previews the edge change for a path app's local
+// names (S498, ADR-062 amendment): published, a request on
+// the local name answers 307 to the public address, path and query kept;
+// unpublished, the local names serve the app again. Craft apps keep the LAN
+// open, so for them the warning says nothing changes. An API client on the LAN
+// (Komga's OPDS, an app on a phone) that does not follow a 307 needs the
+// public address.
+func lanPathRedirectWarning(f appPublicFacts, plan appPublicPlan) string {
+	r := f.routes[0]
+	local := "the local address " + r.Path
+	if r.CraftApp != "" {
+		return "Your local address " + r.Path + " stays open: " + f.manifest.Title + " keeps no redirect on the local network (ADR-062)."
+	}
+	if plan.Action == "remove" {
+		return "Edge change: the redirect from " + local + " to " + plan.URL + " is removed; the app is served on its local address again."
+	}
+	return "Edge change: requests for " + local + " are redirected (307, path and query kept) to " + plan.URL +
+		". Local apps and API clients that do not follow redirects must use the public address; unpublish " + f.manifest.Title + " to serve the local address again (S498)."
+}
+
+// openToInternetWarning says who stands in front of a published app. An app
+// gated by Authentik forward-auth (ADR-055) is planned with its gate in the
+// same install (S450), so the warning says when the gate arrives.
+func openToInternetWarning(m catalog.Manifest, signIn bool, url, path string) string {
+	if accountlessInstallApps[m.Name] {
+		// A craft app has no sign-in of its own (ADR-062 section 6).
+		if !signIn {
+			return m.Title + " has no sign-in of its own, so " + url + " answers nothing on the internet until its Authentik gate is on (plan it next: homesteadctl apps sign-in plan " + m.Name + "). Your local address stays open."
+		}
+		return "Anyone on the internet who signs in to Authentik and belongs to " + m.Title + "'s group (or is the owner) can reach " + m.Title + " at " + url + "; everyone else gets 403. Your local address stays open."
+	}
+	if m.SSO.ForwardAuth != nil && !signIn {
+		return "Anyone on the internet can reach " + m.Title + " at " + url + ". Until the Authentik gate is on, only " + m.Title + "'s own login protects it; the gate is planned with its install, and the app's login is never left open."
+	}
+	if m.SSO.ForwardAuth != nil {
+		msg := "Anyone on the internet can reach " + m.Title + " at " + url + ", but every request is checked with Authentik first"
+		if len(m.SSO.ForwardAuth.Bypass) == 0 {
+			return msg + "."
+		}
+		// The gate has paths it leaves open (S504); name them as the
+		// sign-in plan does.
+		var open []string
+		for _, b := range m.SSO.ForwardAuth.Bypass {
+			p := b.Path
+			if path != "" {
+				p = docker.PathBypass(path, p)
+			}
+			open = append(open, appsso.OpenWithoutGateLine(p, b.Reason))
+		}
+		return msg + ", except the paths it leaves open. " + strings.Join(open, "; ") + "."
+	}
+	return "Anyone on the internet can reach " + m.Title + " at " + url + ". Homestead puts no Authentik check in front of it: the app's own sign-in is what protects it."
 }

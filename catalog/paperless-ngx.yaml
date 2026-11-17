@@ -1,0 +1,246 @@
+# paperless-ngx document archive (S346): the second Wave 1 package.
+# Curated first-party manifest — versions pin here, updates bump this file.
+# Pins follow the official v3.3.4 compose (postgres 18, valkey 9 alpine).
+# The image's entrypoint is s6-overlay's /init and it has no CMD: the s6
+# service definitions start the web server, task workers and consumer.
+#
+# Secrets (S266/S342): Paperless reads only plaintext variables, so the
+# Django key, database password and first-run admin password are
+# delivered as 0600 files and exported by the supervised entrypoint
+# (ADR-052). The admin password is only used when the superuser is first
+# created; register one before install if you want to choose it, or
+# reset it later with `manage.py changepassword`.
+name: paperless-ngx
+publish: path  # ADR-061
+version: 3.3.4
+title: Paperless-ngx
+blurb: Scan, search, and keep the household paper trail.
+description: Paperless-ngx turns scanned paper into a searchable archive.
+  It reads text with OCR, tags and indexes documents, and keeps the
+  originals alongside their searchable copies. Postgres holds metadata,
+  Valkey queues work, and the document library lives on bulk storage.
+  Scans dropped into the consume folder are picked up automatically.
+category: documents
+icon: mdi:file-document-multiple
+services:
+- name: webserver
+  image: ghcr.io/paperless-ngx/paperless-ngx:3.3.4
+  publisher: upstream
+  exposes: web
+  containerport: 8000
+  # The image declares ENTRYPOINT ["/init"] and no command; the s6
+  # services inside it start the application. Exporting secrets replaces
+  # the entrypoint, so the supervisor execs /init exactly as the image
+  # would.
+  entrypoint: ["/init"]
+  environment:
+    PAPERLESS_URL: "https://{{route_host}}"
+    # Subpath (S475): Django's script name and the static URL carry the
+    # prefix; the Angular client reads its base href from the page. PAPERLESS_URL
+    # stays scheme and host only.
+    PAPERLESS_FORCE_SCRIPT_NAME: "{{route_path}}"
+    PAPERLESS_STATIC_URL: "{{route_path}}/static/"
+    # S497: Django's CSRF same-origin rule compares the Origin header with
+    # the scheme and host it sees. Behind the edge it sees http unless it
+    # trusts the proxy's X-Forwarded-Proto, so a sign-in button POST from
+    # the public name (https://homestead.<zone>/apps/paperless-ngx/, which
+    # is not PAPERLESS_URL's host) was refused with 403. The edge sets the
+    # header on every proxied request and is the only way in.
+    PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO", "https"]'
+    PAPERLESS_DBENGINE: postgresql
+    PAPERLESS_DBHOST: db
+    PAPERLESS_DBNAME: paperless
+    PAPERLESS_DBUSER: paperless
+    PAPERLESS_REDIS: redis://broker:6379
+    # Default OCR language; the image already ships eng, deu, fra, ita
+    # and spa. Additional language packs are a config value
+    # (PAPERLESS_OCR_LANGUAGES), installed at start.
+    PAPERLESS_OCR_LANGUAGE: eng
+    # The image runs as uid/gid 1000 with USERMAP defaults; the first-run
+    # superuser is created once, with the password from the secret store.
+    PAPERLESS_ADMIN_USER: admin
+    PAPERLESS_ADMIN_MAIL: admin@homestead.local
+    # Sign-in (S453): local sign-up stays closed (Paperless's default,
+    # stated here so it is pinned) and every account that Authentik
+    # creates joins the group the first run makes, which carries the
+    # permissions Paperless's own screens need. Without it a new account
+    # has no permissions and its page shows "Error loading settings".
+    PAPERLESS_ACCOUNT_ALLOW_SIGNUPS: "false"
+    PAPERLESS_SOCIAL_ACCOUNT_DEFAULT_GROUPS: Homestead people
+    PAPERLESS_ACCOUNT_DEFAULT_GROUPS: Homestead people
+  # Image VOLUMEs: data, media, consume, export. Everything runs as the
+  # paperless user (uid/gid 1000).
+  data:
+  - target: /usr/src/paperless/data
+    class: application
+    subpath: data
+    uid: 1000
+    gid: 1000
+  - target: /usr/src/paperless/media
+    class: bulk
+    subpath: media
+    uid: 1000
+    gid: 1000
+  # The consume inbox lives on bulk storage where the owner can drop
+  # scans, or mount it into Nextcloud as external storage (see the
+  # library integration below).
+  - target: /usr/src/paperless/consume
+    class: bulk
+    subpath: consume
+    uid: 1000
+    gid: 1000
+  # Manual exports; kept beside the library rather than in a tmpfs so a
+  # long export never fills memory.
+  - target: /usr/src/paperless/export
+    class: bulk
+    subpath: export
+    uid: 1000
+    gid: 1000
+- name: db
+  image: docker.io/library/postgres:18
+  publisher: upstream
+  exposes: ""
+  environment:
+    POSTGRES_USER: paperless
+    POSTGRES_DB: paperless
+  # Image VOLUME: /var/lib/postgresql (postgres 18 keeps PGDATA beneath
+  # it; Debian postgres uid 999, 0700).
+  data:
+  - target: /var/lib/postgresql
+    class: application
+    subpath: postgres
+    database: true
+    mode: "0700"
+    uid: 999
+    gid: 999
+- name: broker
+  image: docker.io/valkey/valkey:9-alpine
+  publisher: upstream
+  exposes: ""
+  # No image VOLUME; /data is the queue directory. The consumer re-reads
+  # the consume folder on start, so a lost queue loses no documents.
+  data:
+  - target: /data
+    ephemeral: true
+    sizemb: 128
+    reason: Task queue and cache Paperless rebuilds on start; documents and metadata live elsewhere.
+requirements:
+  memorymb: 2048
+  cpucount: 2
+  architectures: [amd64, arm64]
+  storage:
+  - class: application
+    minbytes: 2147483648
+  - class: bulk
+    minbytes: 10737418240
+  # Granian (inside s6) listens on 8000; routes proxy to it and no host
+  # port is published by default.
+serve: path
+path: /apps/paperless-ngx/
+exposure:
+  package: paperless-ngx
+  endpoints:
+  - endpoint: web
+    recommended: local
+    allowwider: true
+    warnings:
+    - Scanned documents leave the LAN when widened; expose only behind HTTPS with a certificate you trust.
+backuppaths:
+- data
+- media
+sso:
+  class: optional
+  protocols: [oidc]
+  # Sign-in (S413): django-allauth's openid_connect provider, enabled by
+  # PAPERLESS_APPS and configured by PAPERLESS_SOCIALACCOUNT_PROVIDERS, a
+  # JSON value that contains the client secret. Homestead renders that
+  # JSON at apply time into a private secret file (secretfile) that the
+  # supervisor exports; the stack's environment never holds it. Paperless's
+  # own login form stays (PAPERLESS_DISABLE_REGULAR_LOGIN is not set), so
+  # the local admin keeps working. The sign-in button is on the login page.
+  # Groups (S453): the provider asks for the groups scope and Paperless
+  # 3.3.4 makes a person a superuser when the claim holds the app's
+  # Authentik admin group. Group sync into Paperless groups is not used.
+  oidc:
+    adapter: env-oidc
+    service: webserver
+    env:
+      redirectpaths: ["/accounts/oidc/authentik/login/callback/"]
+      signinpath: /accounts/login/
+      secret: oidc_client_secret
+      secretfile:
+        secret: oidc_providers
+        template: '{"openid_connect":{"APPS":[{"provider_id":"authentik","name":"Authentik","client_id":"{{client_id}}","secret":"{{client_secret}}","settings":{"scope":["openid","profile","email","groups"],"server_url":"{{issuer}}.well-known/openid-configuration"}}]}}'
+      # allauth fetches discovery and tokens with requests; the combined
+      # bundle keeps its other HTTPS fetches working (S410).
+      trust: REQUESTS_CA_BUNDLE
+      trustbundle: combined
+      warnings:
+      - "Paperless-ngx keeps its own login form. People who sign in through Authentik get an ordinary Paperless account created at first sign-in (username from their Authentik username); they join the Homestead people group, made at install, which lets them upload, view and edit their own documents (each person sees their own documents unless one is shared with them). People with the Admin role for this app (the owner included) become Paperless administrators at sign-in; the local admin account (password under Secrets) also stays. An existing Paperless account is not linked automatically: sign in to it, then link Authentik under My Profile."
+      set:
+        PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+        PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
+        # Admin rights (S453): Paperless makes a person a superuser at
+        # each sign-in when the groups claim holds this Authentik group,
+        # the app's admin group Homestead keeps (the owner and anyone
+        # given the Admin role). Groups are not synced otherwise, so the
+        # default group above is never cleared.
+        PAPERLESS_SOCIAL_ACCOUNT_SYNC_SUPERUSER_GROUP: homestead-paperless-ngx-admins
+        PAPERLESS_SOCIAL_ACCOUNT_SYNC_STAFF_GROUP: homestead-paperless-ngx-admins
+database:
+  service: db
+  kind: postgres
+  database: paperless
+  username: paperless
+  passwordsecret: db_password
+secrets:
+- name: db_password
+  consumers:
+  - service: db
+    env: POSTGRES_PASSWORD_FILE
+  - service: webserver
+    env: PAPERLESS_DBPASS_FILE
+    export: true
+- name: django_secret
+  # Rotating the key invalidates sessions and signed tokens.
+  immutable: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_SECRET_KEY_FILE
+    export: true
+# Sign-in (S413). The client secret has no consumer of its own: it reaches
+# Paperless only inside oidc_providers, the rendered provider JSON.
+- name: oidc_client_secret
+  immutable: true
+- name: oidc_providers
+  # "{}" is Paperless's empty provider list; sign-in on replaces it with
+  # the rendered setting, off restores it.
+  initial: "{}"
+  immutable: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_SOCIALACCOUNT_PROVIDERS_FILE
+    export: true
+- name: admin_password
+  # Only read when the first superuser is created; changing it later does
+  # not reset an existing account (reset inside the app or with
+  # manage.py changepassword). Revealable (S453): it is the owner's way
+  # to manage Paperless users and groups.
+  immutable: true
+  reveal: true
+  consumers:
+  - service: webserver
+    env: PAPERLESS_ADMIN_PASSWORD_FILE
+    export: true
+firstrun:
+  routine: paperless-ngx
+  service: webserver
+  account: admin
+  secret: admin_password
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik from the Paperless login page; the local login form stays available.
+- kind: library
+  target: nextcloud
+  note: Nextcloud can mount Paperless's consume folder as external storage, so scans land where Paperless picks them up.

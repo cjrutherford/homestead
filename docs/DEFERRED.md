@@ -28,7 +28,9 @@
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):
   needed before friendly names (S086) work end-to-end against a fresh
   instance; kept out of S085 as version-brittle and unverifiable without
-  a live server.
+  a live server. S382 owns the deterministic bootstrap (a version-checked
+  install API or a pre-seeded minimal configuration) and the first
+  end-to-end local-name proof.
 - Route 53 STS session-token flow: the S094 adapter takes static IAM keys
   only; short-lived credentials need a refresh flow no slice owns yet.
 - Overlay-view DNS application: S098 computes overlay effective tables,
@@ -83,9 +85,10 @@
   backups find no sources. Planned as S276 (declared placement for new
   installs) and S277 (migration of existing installs plus a backup
   source guard).
-- ghcr registry checks: S190 discovers Docker Hub tags only; ghcr
-  listings need a token flow before Immich updates discover
-  upstream.
+- Private registry discovery: S343 adds GHCR through its anonymous pull
+  token, and Docker Hub stays anonymous. Images on private registries or
+  private GHCR repositories report a refusal (the image may be private)
+  instead of holding credentials Homestead does not have.
 - Platform release acquisition: S194 models desired versions only;
   fetching releases belongs with distribution work (S264 verifies
   owner-supplied local files but fetches nothing; S265 applies them).
@@ -101,12 +104,13 @@
   replaced only as the last two `<binary>.rolledback-<stamp>` copies and
   does not make it the new "previous", so there is no one-step
   roll-forward.
-- Production release signing key: the HAI public key embedded by S264
-  (`internal/release.EmbeddedPublicKey`) is a labelled placeholder
-  whose private half was discarded. The real key, signing ceremony,
-  and release tooling that publishes `version=`/`counter=` checksums
-  and `.minisig` files are pending; owners may import a key by
-  configuration meanwhile.
+- Production release signing key: the owner's public key (key ID
+  44D917EE2A0EA0C8) is committed as `release/release.pub` (2026-11-08),
+  and `make release` embeds it through the S493 `ReleasePublicKey` seam.
+  Still pending: plain `go build` and dev/VM deploys keep the labelled
+  placeholder (`internal/release.EmbeddedPublicKey`), so Doctor's
+  release-trust check stays amber there; the first signed release
+  (`.minisig` files, signing ceremony) is still to do.
 - Release automation follow-ups (S332): signing is manual, so CI cannot
   publish a signed release; `SHA256SUMS` lists per-platform file names and
   nothing renames them to the bare component names; no
@@ -329,7 +333,7 @@
 
 ## Static craft packages (S249, ADR-028)
 
-- Owner signature: `catalog/craft/craft-manifest.yaml` is committed
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: `catalog/craft/craft-manifest.yaml` is committed
   unsigned; no `.minisig` exists until the owner generates the craft key
   offline and signs it (`docs/architecture/CRAFT_SIGNING_RUNBOOK.md`). Until
   then WordCraft cannot be built or installed outside a throwaway-key test.
@@ -346,13 +350,12 @@
   There is no catalog-load check against the manifest the daemon last
   verified, because an unsigned or absent manifest must not hide the whole
   catalog.
-- `requirements.ports` serves two jobs: the dashboard's default container
-  port and the host-port conflict check. Craft packages declare no
-  `requirements.ports` (the container publishes no host port and the daemon
-  itself listens on 8080, so declaring it refused every install); the
-  dashboard defaults a `homestead/craft-` service to container port 8080
-  instead. The fields should still be split so a container port has its own
-  manifest field.
+- Genuine published host ports: S383 separates container listener metadata
+  from `requirements.ports` and fixes false conflicts for proxy-routed curated
+  packages. No current curated install publishes host ports. A package that
+  truly needs one still requires a reviewed plan for an owner-selected host
+  port, Compose mapping, conflict checks and CLI/dashboard parity; the
+  container port must remain separate from the selected host port.
 - Edge network aliases: every service in a routed stack joins
   `homestead-edge` and routes target the bare service name, so two stacks
   using the same service name (for example `web`, `db`) would share an alias
@@ -377,10 +380,10 @@
 
 ## Office craft packages (S250)
 
-- Owner signature: the four-app craft manifest (counter 2) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the four-app craft manifest (counter 2) is unsigned;
   GridCraft, PdfCraft and DeckCraft cannot be built outside a throwaway-key
   test until the owner signs it.
-- KVM acceptance for the three apps is pending (see
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the three apps is pending (see
   `docs/DEVELOPMENT.md`); the `knownImageVolumes` rows and header-table
   rows are marked pending until then.
 - First-load size: the uncompressed wasm is 18.9 MB (GridCraft), 38.1 MB
@@ -392,12 +395,12 @@
 
 ## Graphics craft packages (S251)
 
-- Owner signature: the eight-app craft manifest (counter 3) is unsigned; the
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the eight-app craft manifest (counter 3) is unsigned; the
   four graphics apps cannot be built outside a throwaway-key test until the
   owner signs it. A KVM appliance that already holds a baseline at counter 3
   or higher from throwaway manifests (the S249 VM held 4) refuses this
   manifest; use a fresh appliance or a higher throwaway counter there.
-- KVM acceptance for the four apps is pending (see `docs/DEVELOPMENT.md`);
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the four apps is pending (see `docs/DEVELOPMENT.md`);
   the `knownImageVolumes` rows and header-table rows are marked pending until
   then.
 - VectorCraft moved to v0.12.0 between planning (v0.11.0) and S251; a bump
@@ -434,11 +437,11 @@
   deckcraft and the four S251 graphics apps) still carry the WebGPU/WebGL2
   note as description text; adding structured `browser` entries to them is a
   catalog-only follow-up.
-- Owner signature: the eleven-app craft manifest (counter 4) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the eleven-app craft manifest (counter 4) is unsigned;
   FilmCraft, EffectCraft and SoundCraft cannot be built outside a
   throwaway-key test until the owner signs it. A KVM appliance holding a
   baseline at counter 4 or higher from throwaway manifests refuses it.
-- KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
+- S382 correction (stale, the run is recorded in docs/DEVELOPMENT.md; DNS resolution is S382's live check): KVM acceptance for the three apps is pending (see `docs/DEVELOPMENT.md`);
   the `knownImageVolumes` rows and header-table rows are marked pending.
 - None of the three needs `SharedArrayBuffer`, COOP or COEP (upstream
   builds are single-threaded; their `HOSTING.md` says so). Upstream's local
@@ -492,7 +495,7 @@
   texts only;
   `docs/THIRD_PARTY.md` records the licences. Ask upstream to include NOTICE
   and the OFL texts in the web zips.
-- Owner signature: the thirteen-app craft manifest (counter 7 since S254) is unsigned;
+- S382 correction (stale, the manifest is signed at counter 8 by the HAI craft key, commit 3af901f): Owner signature: the thirteen-app craft manifest (counter 7 since S254) is unsigned;
   DesignCraft and CADCraft cannot be built outside a throwaway-key test until
   the owner signs it. A KVM appliance holding a baseline at counter 7 or
   higher from throwaway manifests refuses it.
@@ -645,13 +648,9 @@
     one failing check at a time as the daemon words it. A route returning the
     structured requirement report without planning would let the wizard list
     every check with its numbers.
-  - Closed after the S285 KVM review: `requirements.ports` are host ports and
-    Homestead publishes none, so Nextcloud's `ports: [80]` failed once Caddy held
-    80 (confirmed on VM 2). Nextcloud now declares none (as the craft packages
-    do) and the wizard defaults its container port to 80 from curated copy.
-    Left: Jellyfin (8096), Immich (2283) and Authentik (9000) still declare
-    their container ports as host ports, which only conflicts if something else
-    on the host listens there; decide whether `ports` should mean host ports at all.
+  - Closed by S383: curated proxy-routed packages declare container ports
+    separately from host requirements, so a listener on the host no longer
+    blocks an app that does not publish that port.
   - The plan route's storage floor check read free space only from class
     assignments, so a mount chosen in the request failed with "no space data".
     Fixed in the daemon (the chosen mount's free space is read from discovery),
@@ -1050,7 +1049,9 @@
 - Adapter admin mapping is unverified live: Nextcloud (`user_oidc`
   `--group-provisioning` / `--mapping-groups` and the `admin` alias group),
   Jellyfin (SSO plugin `AdminRoles`/`Roles`/`RoleClaim`) and Immich
-  (`roleClaim` `immich_role`). The owner's VM 2 check covers them.
+  (`roleClaim` `immich_role`; checked live on VM 2 in S460: the owner becomes
+  an Immich administrator and person A stays an ordinary user). The owner's
+  VM 2 check covers the others.
 - Turning sign-in off removes the app's two groups, but an uninstall with
   `leave_sign_in` leaves them (the refusal text says so); Homestead cannot
   delete them then.
@@ -1386,3 +1387,503 @@ Craft apps under one host, by path (ADR-045).
   `/people`; they are records and were not rewritten.
 - The sidebar still shows on the root-level owner pages (setup, claim, login,
   sign-in, account); only `/` is chrome-free.
+## Catalog expansion (2026-10-23)
+
+The evaluation and wave plan live in `docs/CATALOG_EXPANSION.md` and
+`docs/SLICE_PLAN.md`. The Everything track remains planned, not implemented.
+
+- Puter/Everything apps: S367–S380 are packaged (ADR-057) and S381 is deferred; the note below is the original evaluation. The monorepo's apps are Vite SPAs that
+  load the Puter cloud SDK (`https://js.puter.com/v2/`) for identity and
+  storage, have no per-app Docker packaging, and overlap the existing craft
+  suite. Revisit only with an ADR for a second static-app source, a fork or
+  adapter that removes the Puter cloud dependency, or a self-hosted Puter
+  platform decision. S367 proposes the adapter in ADR-053; the person-scoped storage and authorization contract, daemon-independent operation and bridge-specific tests remain unproven.
+- Not planned for v1: mail servers (deliverability and port-25/abuse
+  burden), Matrix/chat servers (federation and identity duplication),
+  Home Assistant (needs host networking or device passthrough), object
+  storage, CMS/blog platforms, a second photo gallery, and Nextcloud office
+  add-ons (blocked on Nextcloud app management, not on another package).
+- qBittorrent: deferred until a supported VPN/network-mode design exists;
+  the current schema cannot express `network_mode: service:vpn`.
+- Foundation items the planned apps still need are **scheduled work, not
+  deferrals**: the written community-image policy (S360). OIDC actuation
+  with the supervised secret-entrypoint wrapper (S342), GHCR update
+  discovery (S343), catalog bundles (S344) and MariaDB/MySQL backup export
+  (S352) have landed. The remaining order is in
+  `docs/CATALOG_EXPANSION.md` section 9; this ledger keeps only the work
+  that is genuinely unscheduled.
+- MariaDB/MySQL database password verification and rotation: S352 adds
+  both engines as dump kinds and lets their manifests declare a
+  `PasswordSecret` so scheduled backups resolve it, but `ALTER USER` and
+  the authenticate-with-a-wrong-password check remain Postgres-only.
+  Registration for these engines refuses with a `--skip-verify`
+  instruction, and rotation refuses before journaling, so a secret and a
+  database never disagree. Implement in the slice that first needs to
+  rotate a MariaDB/MySQL password (BookStack ships a generated one that
+  is not rotated), including the host part of the user grant.
+- SSO actuation surfaces: S342 lands the mechanism (catalog OIDC
+  declaration, Authentik client actuation, catalog-secret storage,
+  supervised secret export) but no owner-facing entry point. Provider
+  endpoint and API-token configuration, the API route and CLI command
+  that activate or deactivate one package's client, and the dashboard
+  control come with the slice that turns SSO on for an installed app.
+  Vaultwarden (S345, closed to local signup since S454) ships with optional OIDC declared,
+  so the missing surface blocks nothing today.
+- Vaultwarden's admin page: S345 installs with it off and no
+  `ADMIN_TOKEN`, because a generated token would enable an administrative
+  surface by default. Enabling it later — generating the token through
+  the secret store and exposing the page through configure — is not
+  surfaced yet; the owner can still manage users in the app itself.
+- Owner-chosen first-run admin credentials: Paperless-ngx (S346) and
+  Linkding (S349) declare their first superuser password as a secret, but
+  secrets are generated at install and never read back, so an owner who
+  does not register a value beforehand must reset the account inside the
+  app or with the image's `manage.py changepassword`. A general "this secret
+  must be supplied by the owner" declaration, or an install-time prompt
+  that requires one, is not in the secret schema.
+- Mealie's seeded administrator: closed by S448. The first-run routine
+  replaces the seeded password and identity with a generated, revealable
+  password for homestead-admin@homestead.lan.
+- Uptime Kuma's monitor bootstrap: S351 installs the board with no
+  monitors; the owner adds checks in the app. Pre-seeding one monitor per
+  installed app and route (the "all local apps" intent) needs Homestead to
+  create monitors through the app's API, which is not scheduled.
+- Audiobookshelf's OIDC setup: S353 declares optional OIDC, but the
+  issuer, client ID, and secret live in the app's SQLite server settings
+  and the image reads no OIDC environment variables. Until the SSO
+  actuation surface above lands, the owner configures OpenID Connect in
+  the app with the callback at `/auth/openid/callback`; local accounts
+  keep working.
+- Audiobookshelf metadata backup scope: `/metadata` is backed up whole,
+  including covers, scan logs, and any app-created backups under
+  `/metadata/backups`. Per-path exclusions inside a catalog backup source
+  are not modeled, so an owner who enables large in-app backups should
+  move the app's backup path or accept the extra size. The owner media
+  volumes (`/audiobooks`, `/podcasts`) are never backup sources.
+- Navidrome reverse-proxy header authentication: S354 ships local accounts
+  as the documented exception. Upstream accepts a trusted user header
+  (`ND_REVERSEPROXYUSERHEADER`), but Homestead's edge does not inject an
+  identity header into app requests; wiring the edge to a trusted identity
+  source is deferred. The external metadata services (Last.fm, Deezer,
+  ListenBrainz) stay at upstream defaults; disabling them with
+  `ND_ENABLEEXTERNALSERVICES=false` is an owner setting, not a catalog
+  default.
+- Komga OIDC client actuation: S355 declares optional OIDC, but Komga
+  reads a Spring client registration (`spring.security.oauth2.client`) in
+  `application.yml` under `/config`: the issuer URI, redirect template, and
+  client credentials are owner-supplied, and the catalog has no issuer
+  input to build them from. The owner configures the client in Authentik
+  and in that file (backed up with the config tree); local accounts stay
+  available. S392 now establishes a local recovery administrator only on a
+  fresh install, refusing any reused `/config` content or claimed database.
+  Actuating OIDC and per-person access remains deferred because pinned Komga
+  cannot disable an existing account across Basic, sessions, API keys and OIDC
+  while preserving its data.
+- Several SQLite databases in one package: the catalog supports one
+  database export per package. Komga's main `database.sqlite` is exported
+  consistently, but `tasks.sqlite` and `sessions.sqlite` are copied as
+  live WAL files; both are Flyway-migrated and recreated if missing, so a
+  restore loses task history and sessions rather than library data.
+  Calibre-Web Automated's `config/app.db` is exported, while `cwa.db` and
+  the Calibre library's `metadata.db` are copied live from their trees; a
+  restore may need Calibre's database restore to rebuild the library
+  catalog, and CWA's ingest settings fall back to defaults. A multi-export
+  declaration is deferred.
+- Calibre-Web Automated OIDC client actuation: done in S415 (`env-oidc`
+  with an inline script that writes CWA's own `app.db`; see the S415 lines
+  below).
+- Calibre-Web Automated original-backup growth: `processed_books` under
+  `/config` keeps the original of each file CWA processes, so the
+  application backup grows with the library. Per-path exclusions inside a
+  catalog backup source are not modeled; owners who do not want the
+  originals can turn the setting off in the app or accept the extra size.
+- Gitea's SSH surface: S347 installs HTTPS-only (`DISABLE_SSH`), publishes
+  no SSH port and deploys no keys. Enabling `ssh://` clones — an SSH port
+  through the host or an overlay tunnel, authorized keys, and clone URLs
+  that match — is an explicit owner decision not scheduled yet.
+- (Done in S444) Closing Gitea registration: the first run creates
+  `homestead-admin` and `DISABLE_REGISTRATION` is true from install.
+- SAML and LDAP client actuation, provider-side secret rotation, and
+  authorisation-group mapping stay out of scope until a package needs
+  them; the S342 mechanism is OIDC-only.
+
+## Craft serve and DNS advertisement validation (S382)
+
+- S382 found the planned AdGuard route-reconcile design superseded: ADR-039 (S295) built the accepted local-name path. Names derive from the edge route table: the in-process mDNS responder announces `homestead.local` and `<label>.local` for each host route, and the optional `.lan` resolver (`internal/localdns`, off until the owner approves a plan) answers `homestead.lan` and each host route's `<label>.lan`. Craft apps are served by path (S320), so they add no names of their own. `docker.EnsureNameDefinition`, `jellyfin.LocalRewrite`, `docker.AdguardDeployDefinition` and `dns.EstablishSplitDNS` still have no reconcile caller; S382 does not wire them (a second DNS path). Removing or folding them into one path is cleanup left for a later slice.
+- S382 does not add an "advertised" state to the Craft apps start page: the page links `https://homestead.lan/apps/<app>/`, which resolves through mDNS on devices that do `.local`, or the `.lan` resolver or a router entry. A per-device claim cannot be made from the appliance. The Names page states which resolver is on.
+- S382 AAAA/IPv6 answers, multi-homed appliances beyond the per-subnet address choice in `internal/localdns`, and advertising the resolver to clients through DHCP stay out of scope.
+- S382 live-only: the 13-app build matrix and a second-client resolution proof are run by the owner on VM 2 from the slice runbook; mDNS does not cross the VM 2 NAT, so `.local` needs a device on the same L2 segment.
+
+- Audiobookshelf Authentik adapter (S385): its first-run recovery administrator is created by S384, but OIDC client provisioning, app-side actuation, group mapping, install-time approval, and live sign-in remain to be implemented and verified. Existing owner-created administrators must not be overwritten.
+
+- Catalog-wide install-time Authentik: packages without a Homestead adapter still need individually verified adapters, user provisioning, role mappings, and recovery behavior. Authentik-unavailable installs and stateless or unsupported apps need clear access handling. Server-side setup validates all selected people before grants, but sequential cross-service grants still need partial-failure recovery and cannot prevent account changes after validation.
+
+- ADR-054 install access enforcement remains S390: connect the S389 decision contract to reviewed dashboard/CLI install flows, server-side step-up and verified app adapters; classify accountless apps and safely handle partial grants.
+- Tunnel plan cannot refresh an existing tunnel's routes: `buildTunnelPlan` refuses while a tunnel exists, so the only repair for stale published paths (the 2026-10-31 Authentik move) is teardown, which drops every app public name and some cannot be re-published. S395 prevents that cause for the Authentik move but adds no refresh; a "re-plan routes in place" flow is still needed.
+- Other `Published = false` writers are craft-only (`pathCraftRoutes`, `MigrateCraftRoutes`), which never touch Authentik; no further Authentik unpublishing path is known.
+- S396 only adds names to an app's allow-list; Homestead-added names that are no longer served (after a move, rename or public-name removal outside the app.public flow) stay trusted until the owner removes them, because Homestead does not record which entries it added. Tunnel setup/teardown that bypass `startEdgeReconcile` (they call `reconcileEdgeSet` directly) do not run the hook; the next edge change or `nextcloud-link` resume does. If the app-hosts step fails (for example Nextcloud is stopped) after the edge table is saved, retrying the same edge change skips the app because its names no longer differ; the repair is resuming the craft nextcloud-link step or the next change to the app's names. A persisted "last trusted names" baseline would let a plain retry repair it.
+- S399 skips the sign-in step when the Authentik API token is not kept (the public plan then tells the owner to re-plan sign-in); a one-time token field on the public apply request would let the same operation cover it.
+- S400: a move whose sign-in step fails (Authentik down) leaves the app moved with its sign-in on the old address; the owner re-plans from the app card. A one-time token field on the move apply request would let a move also cover the token-not-kept case.
+- S400: the craft files link is moved by address only. Nothing checks that Nextcloud answers at the new address before the link is updated; the Craft files page shows the link's readiness afterwards.
+- S401 (S400 review): a move that fails between its stop step and its up step (a seed write fails) leaves the app stopped, and the error does not say so. A failure path should bring the stack back up or name the stopped app.
+- S401 (S400 review): when the craft files link step fails, the move stops before its sign-in step, and the error only mentions the link. It should also say sign-in was not updated.
+- S402: the S342 `catalog.ActivateOIDC`/`DeactivateOIDC` code (`internal/catalog/oidcapply.go`) is superseded by the env-oidc adapter (ADR-052 amendment) and unused; remove it and its tests.
+- S402: per-app env-oidc slices: Mealie; Linkding (no discovery, derive the endpoints from the issuer); FreshRSS (two secrets); Komga (Java truststore); Paperless (secret inside a JSON setting).
+- S402: Navidrome and Uptime Kuma have no OIDC; sign them in through forward-auth (owner reopened this 2026-10-31). An ADR is needed first.
+- S402 (done in S403): an install from before an app declared its client secret now gets just that secret's wiring patched into its Compose file when sign-in is applied.
+- S403: the stack patch (`catalog.WireDeclaredSecret`) is for declared secrets consumed as file-path variables; it does not handle `export` consumers (entrypoint scripts) or secrets that need an owner or mode from another service. Other per-app slices should check this.
+- S403: Mealie's `BASE_URL` still follows the route host only; a path-served or multi-name Mealie may need it to follow the public name.
+- S404: rotating an env-oidc app's client secret does not re-sync Authentik; the configure response warns, and applying sign-in again fixes it. Chaining the re-sync needs the catalog to call the sign-in operation (an import cycle today).
+- S404: the warning about owner values sign-in replaces appears at plan time and in the audit; the operation step results carry no notes, so the dashboard cannot show the "left in place" note after turning sign-in off.
+- S404: turning sign-in off removes a variable the owner set to exactly the value sign-in sets (the override cannot tell the two apart).
+- S405: an env-oidc app on the local issuer that also needs public roots (a later issuer switch handled by the move) is not covered by a combined bundle; only the local issuer sets the trust variable.
+- S405: an existing Mealie install keeps a root-owned secret file until sign-in is applied again.
+- S406: a sign-in plan reads "Nothing changes" when only the override file is stale (e.g. a trust variable left from before S405); the apply fixes it. Plans should compare the override's sign-in keys too.
+- S407: apps served by path (Nextcloud's `OVERWRITECLIURL`, Immich and others under `/apps/<svc>/`) keep the local base URL after they are published; `{{app_url}}` is only rendered public for apps with a name of their own. A path app that needs the public base URL would need its own token and plan step.
+- S407: with several public names on one route the base URL follows the first name; choosing which name an app builds its links on is not offered.
+- S407: the dashboard lists the base-URL change in the plan's app settings but has no dedicated "refresh" button; the already-public fix is the same public add plan (CLI: `apps public plan|apply <app> --hostname <existing public name>`).
+- S409: Linkding has no group claim, so every Authentik person becomes an ordinary user; the first superuser stays the local `admin` and nobody is promoted from Authentik groups.
+- S410: the combined trust bundle is built from the appliance host's system CA bundle only when sign-in is applied, so host CA updates reach Linkding on the next re-apply, not automatically.
+- S411: Komga has no group or role mapping, so every Authentik person it creates is an ordinary user; the first admin stays the local recovery account.
+- S411: Komga signs in with explicit endpoints and no `issuer-uri`, so its OIDC `iss` check is skipped (Authentik still signs the token with the JWKS key); revisit if Komga stops needing startup discovery.
+- S411: the Java trust store is built from the appliance host's system CA bundle at sign-in apply only, so host CA updates reach Komga on the next re-apply.
+- S411: the Komga sign-in button and local-login coexistence are confirmed from source, not yet from a live VM.
+- S412: the sign-in plan states the FreshRSS admin rule but does not read the default user from the app; a plan could show the actual username once the app exposes it cheaply.
+- S412 (resolved by S445): FreshRSS is installed by Homestead, so sign-in no longer waits for a web installer.
+- S412: the combined CA bundle laid over FreshRSS's system CAs is built at sign-in apply only, so host CA updates reach it on the next re-apply.
+- S412: FreshRSS sign-in is confirmed from source, not yet from a live VM (mod_auth_openidc return URL behind the edge, auto-registration, off restoring the form login).
+- S413: Paperless-ngx sign-in gives everyone an ordinary account with no permissions; admin rights and group sync (`PAPERLESS_SOCIAL_ACCOUNT_SYNC_GROUPS`, needs matching Paperless groups created first) are not wired.
+- S413: a re-apply that changes only the derived provider file (an issuer move between two private names) does not recreate the running container, so Paperless keeps the old setting until it restarts.
+- S413: Paperless sign-in is confirmed from docs and source, not yet from a live VM (login-page button, callback behind the edge, public-name CSRF origins via PAPERLESS_CSRF_TRUSTED_ORIGINS if needed).
+- S413: `oidc_client_secret` is immutable here; rotating a client secret is a re-apply of sign-in, not a secret rotation.
+- S414: Vaultwarden sign-in sets no refresh-token scope (Homestead's Authentik provider has only the authorization-code grant and no `offline_access` mapping), so `SSO_AUTH_ONLY_NOT_SESSION=true` keeps Vaultwarden's own session lifetime; revisit if sessions should follow Authentik.
+- S414: sign-in completes only at the address Vaultwarden's `DOMAIN` names (the app address); other routes of the same app are listed as redirects but fail inside Vaultwarden.
+- S414: Vaultwarden sign-in is confirmed from release notes, wiki and source, not yet from a live VM (Authentik `email_verified`, existing-account email match, 1.34.3 to 1.37.4 data migration).
+- S414: no Authentik group to Vaultwarden organization mapping; SSO only signs people in, organizations and master passwords stay in Vaultwarden.
+- S409: a Linkding stack from before S349's supervisor (no entrypoint in compose.yaml) is not repaired by the secret wiring; reinstall it.
+- S409: OIDC accounts match existing Linkding users by email; an Authentik person with no email gets a new account rather than the matching one.
+- S415: Calibre-Web Automated sign-in depends on CWA's internal `app.db` schema (`oauthProvider`, `settings`) and on `/app/CWA_RELEASE`. Every CWA package update must re-verify the script first; a pin test (`TestCWASignInPinnedToVerifiedVersion`) fails until it is, and the script refuses another version or a missing column. If CWA gains an environment or file configuration for OAuth, replace the script with it.
+- S415: Calibre-Web Automated stores the redirect host in `app.db`, so an address change (public refresh or move) needs sign-in planned and applied again; Homestead does not re-run the script by itself. The script also assumes `/app/CWA_RELEASE` reads like `v4.0.8`; if it is absent it relies on the column check alone.
+- S415: Calibre-Web Automated's client secret sits in plaintext in `app.db` (application storage and backups); the app has no secret-file form. Group-to-role mapping is only admin (Homestead admin group at each sign-in); non-admin roles stay at CWA's default role.
+- S415: sign-in off clears the generic provider's client id, secret, discovery URL and admin group, and turns login type and group admin management off; it leaves the stored redirect host and button text, which are harmless.
+- S415: the Calibre-Web Automated sign-in script and restart are confirmed against the image's source and a v4.0.8 container's schema, not yet by a full live apply on VM 2 (restart timing, `/app/CWA_RELEASE` content, `groups` claim).
+- S416: Gitea sign-in depends on Gitea's internal `login_source` schema (nine columns, type 6 = OAuth2, the `oauth2.Source` JSON) and on `gitea --version`. Every Gitea package update must re-verify the script first; a pin test (`TestGiteaSignInPinnedToVerifiedVersion`) fails until it is, and the script refuses another version or a missing column. If Gitea gains a secret-file or stdin form of `admin auth add-oauth` or an admin API for sources, replace the script with it.
+- S416: per-person `none` is not enforced for Gitea: local passwords keep working, and sign-in has no required-claim gate. Local registration was closed in S444 with a first-run administrator; a `RequiredClaimName`/`RestrictedGroup` mapping from Homestead's `user` and `none` choices is also deferred.
+- S416: Gitea's client secret sits in plaintext in `gitea.db` (application storage and backups); the source has no secret-file form. Off clears it and deactivates the source but leaves the row, so linked accounts keep their link.
+- S416: Gitea sign-in off leaves `external_login_user` links and every account in place; a Gitea account created through Authentik has no local password until the person sets one.
+- S416: an Authentik group is mapped to Gitea administrators only; no group-to-organization or team mapping (`GroupTeamMap`) and no SSH key or avatar sync.
+- S416: Gitea reads its discovery document at startup, so Authentik must be reachable when the app restarts after apply; if it is not, Gitea logs the error and the source is not offered until the next restart. Homestead does not re-run the script by itself.
+- S416: the Gitea sign-in script and restart are confirmed against the v28.2.0 source and a live gitea/gitea:28.2.0 container with a stand-in discovery server (row written, listed by `gitea admin auth list`, `/user/oauth2/authentik` redirects to the authorize URL), not yet by a full apply against Authentik on VM 2 (token exchange, account linking page, admin sync, TLS trust with the combined bundle).
+- S417 Audiobookshelf sign-in must be re-verified on every Audiobookshelf update (schema, writer, redirects, groups, logging); `TestAudiobookshelfSignInPinnedToVerifiedVersion` forces it. Revisit if upstream gains a secret-safe settings API or file.
+- S417 With no automatic account matching, a person whose Authentik username equals an existing Audiobookshelf username gets a second account (the app does not check). No per-person "none" or link choice yet.
+- S417 The OpenID client secret sits in plaintext in `absdatabase.sqlite` (and its backups); the app offers no other store.
+- S417 Audiobookshelf logs the signed-in person's profile (name, email, groups) at info level on first sign-in; owner accepted, no mitigation available.
+- S417 Live check on VM 2 pending: Audiobookshelf is not installed there. Needs token exchange, `NODE_EXTRA_CA_CERTS` trust, the groups claim, mobile redirect, recovery login after apply and re-apply after an address change.
+- S417 Audiobookshelf advanced permissions claim and the `guest` role are not mapped.
+- S417 Turning sign-in off leaves accounts created by it; they keep a link and can no longer sign in with OpenID.
+- S418 Forward-auth is wired for Navidrome only: MariaDB-backed apps, a second (non-embedded) outpost and other apps are not done (Kuma is S419).
+- S418 The trusted source was the edge subnet, not a /32 pin of the edge container; closed in S420 (edge /32, drift reported as re-plan and a Doctor warning).
+- S418 ADR-054 install-review does not yet show forward-auth apps (`installAccessMode` still says self-managed for Navidrome).
+- S418 `ReadAccounts` runs `docker cp` on every status call for an enabled gate; no cache.
+- S418 Owner username is not in the people table, so owner/local-account collisions are not checked; a person added later whose username matches an existing Navidrome account is only covered by a plan warning.
+- S418 Moving a gated app to a path route fails validation.
+- S418 Live check on VM 2 pending (see the slice file's "Verify live").
+- S420 Sign-in status gives "the app's names changed" as the re-plan reason when only the edge address moved; it should name the trust change.
+- S419 Kuma's own login stays on behind the gate (two sign-ins). The route back to a single login is a host firewall rule restricting non-root access to Kuma's port (the host reaches containers through the bridge gateway, including `--internal` networks on Docker 26); then `disableAuth` could be reconsidered.
+- S419 MariaDB-backed Kuma and Prometheus scraping of `/metrics` through the gate are not handled.
+- S419 ADR-054 install review does not yet show Kuma's admin-only gate.
+- S419 Live check on VM 2 pending (see the slice file's "Verify live").
+- S419 Apply reports success a few seconds before the embedded outpost has loaded a new provider; the gate answers 404 (fail closed) until then. The apply could wait for /outpost.goauthentik.io/auth/caddy to redirect for the host.
+- S357 Vikunja team membership from Authentik groups (the `vikunja_scope` mapping and `vikunja_groups` claim) is not wired; Vikunja has no administrator role to map, so every person signs in as an ordinary user.
+- S357 CalDAV against Nextcloud is not wired: Vikunja serves its own CalDAV and the owner adds it in the calendar app. A guided hand-off is not built.
+- S357 Sign-in is not exclusive: Vikunja's local login and open registration stay on (`auth.local.enabled`, `service.enableregistration` untouched); an exclusive mode is not offered.
+- S357 Vikunja's OpenID provider cannot be a `*_FILE` or environment value, so the client secret lives in a rendered config file in the secret store (backed up with Homestead's secrets); a Vikunja update must re-verify the file shape (pin test).
+- S357 Live check on VM 2 pending (see the slice file's "Verify live").
+- S357 Vikunja cannot run under a path, so it keeps a name of its own (`vikunja.<zone>`), like Immich; Mailer, reminders by email and migration importers are not configured.
+- S358 Actual Budget takes no role from Authentik groups: the first person to sign in becomes the server owner and administrator (permanent in Actual), later people are ordinary users (`ACTUAL_USER_CREATION_MODE=login`). Mapping groups to Actual roles is not possible upstream.
+- S358 Actual stores the OpenID client secret in its own `account.sqlite` (auth table, written by Actual at startup from the `_FILE` secret), so it rides in the app's data backups; not avoidable from Homestead.
+- S358 Sign-in is not enforced (`ACTUAL_OPENID_ENFORCE` unset): a server password set before sign-in stays as a second login. Turning sign-in off runs a verified script that deletes Actual's OpenID row from `account.sqlite`; an Actual update must re-verify it (pin test). With no prior password, off makes Actual ask for a new server password, and budgets stay owned by the OpenID user.
+- S358 Live check on VM 2 pending (see the slice file's "Verify live"). Actual cannot run under a path, so it keeps a name of its own (`actual-budget.<zone>`); bank-sync providers (GoCardless, SimpleFIN, Pluggy) are not configured.
+- S359 Memos takes no role from Authentik groups: people created at first Authentik sign-in are always ordinary users, and there is no Authentik-to-administrator mapping upstream. The administrator is the first account created in Memos with a password (a bootstrap user in the configuration file would need an extra generated secret; not wired). Linking an existing Memos account to Authentik is done by the owner in Memos settings.
+- (Superseded in S446) S359 left Memos's `GENERAL` instance setting alone. The sign-in file now manages it: password sign-in off and registration open while sign-in is on, registration closed and password sign-in on while it is off.
+- (Superseded in S446) S359 off-time guard: the off value of the file now also re-enables password sign-in, so the removal plan always leaves a sign-in method.
+- S359 Memos stores the client secret in its own database (`data/memos_prod.db`, backed up with the app) and in the private secret file. The provider is read-only in Memos while managed.
+- S359 Live check on VM 2 pending (see the slice file's "Verify live"). Memos cannot run under a path, so it keeps a name of its own (`memos.<zone>`). Not configured: S3 storage, webhooks, instance access mode, group-based sign-in denial beyond Authentik app groups.
+- S360 Image signature and build-attestation verification at install or update is not built; provenance is checked by hand at slice time (ADR-056 §5) and most publishers, LinuxServer.io included, publish none.
+- S360 Manifests pin tags, not digests (update discovery compares tags, S343). A rebuilt tag is only noticed at review time; digest pinning with drift detection is deferred.
+- S360 Multi-arch, maintenance and source checks are human-verified and recorded in each slice file; no registry automation checks them, and existing packages were not backfilled with digests or platform lists.
+- S360 The publisher is not shown to the owner in `apps show`, the plan or the dashboard; only the manifest and the catalog test carry it.
+- S360 The LinuxServer `FILE__` secret convention versus the ADR-052 secret entrypoint is confirmed per package in S361-S366, not decided here.
+- S421 Other containers sharing a network with an auth-off app can still reach its port (ADR-055 §5 residual); a dedicated app-only network is the real fix and is not built.
+- S421 The gate table is applied by the daemon's own reconcile and a five-minute pass, not persisted across reboot by an nftables unit; between boot and the first pass (Docker permitting) an auth-off app is unprotected. S422 must not turn a login off until it accepts that window or a boot-time rule is added.
+- S421 With `firewall_mode=external` the rules are not applied and no script for them is shown in the firewall plan; owners get the guidance in Doctor only.
+- S421 `nft --check` of the gate rules is skipped in unprivileged local test runs (S506 closes this for CI, which runs it as root and fails if it cannot), so the nft syntax (`ct status dnat`, `iifname != "br-*"`, `meta skuid`) is first confirmed on the VM.
+- S421 The host block drops non-root access to unpublished ports of every Docker container, not only Homestead's (owner-overridable with `firewall_mode=external`); a per-container allow list is not built.
+- S422 Only the built-in SQLite database is supported for Kuma's own-login-off; a Kuma on MariaDB (embedded or external) is refused with guidance and keeps its login.
+- S422 The Kuma script writes Kuma's own database and must be re-verified on every Kuma update (pin test `kumaSignInVerified`); the `/app/node_modules/@louislam/sqlite3` path is first confirmed on VM 2.
+- S422 The Kuma account has a random unknown password; the owner who wants Kuma's own login back sets one with `npm run reset-password`. A Homestead-run password reset is not built.
+- S422 The boot window before the daemon's first host-block reconcile (accepted by the owner) and containers sharing a network with Kuma (S421 residual) are not closed.
+- S422: the forward-auth sign-in plan opens with "Nothing changes: the Authentik gate is on…" even when the own-login-off step is still pending (seen live on VM 2); the summary line should account for ownloginoff.
+- Wave 3 (owner 2026-11-01, after S422): the *arr suite is deferred — S361 Prowlarr, S362 Sonarr+Radarr (bundled, S363 folded in) and S364 SABnzbd. When resumed they follow the S422 pattern (admin-only gate, requireshostblock, own login off, API paths bypassed with API keys). S365 Seerr is deferred with them (owner 2026-11-01); it sends requests to Sonarr/Radarr.
+- S366 BookStack sign-in must be re-verified on every BookStack update (roles table, `GroupSyncService` role matching, OIDC env names, callback path); `TestBookStackSignInPinnedToVerifiedVersion` forces it. Revisit if BookStack gains an env or file source for role External Authentication IDs.
+- S366 Live check on VM 2 pending: install, default-admin refusal, sign-in apply/off, roles, discovery over the appliance CA, backup dump (commands in the slice file). The sign-in warnings assume the redirect URI list has the same origins pattern as other env-OIDC apps; confirm in the browser.
+- S366 The seeded administrator keeps a generated password nobody sees unless revealed; no Homestead-run reset. BookStack mail, LDAP/SAML, per-shelf permissions and a person-to-existing-account link are not built (an existing account with the same email blocks that person's sign-in).
+- S366 The `docker exec` one-liner for the database check in the slice file reads the password from the mounted file; a CLI database shell is not built.
+- S367: the bridge store is last-write-wins per key with no compare-and-set; Tasks heals concurrent edits by record-level merge, but a stricter revision check could be added later.
+- S367: Authentik provider and application provisioning for the bridge client (client id, secret file, redirect URI) is not done by the daemon; the bridge only consumes them.
+- S367: the Tasks service worker no longer caches the app root, index or any `_homestead/` path (navigations are network-only with a token-free offline page; hashed static assets stay cache-first), and the shim refreshes a stale CSRF token from `GET _homestead/session`. Consequence: the app shell does not load offline (a reload while offline shows the offline page); only an already-open page keeps its offline queue. A real-browser check exists (`scripts/everything/gate/run_browser_check.sh`, dev identity only) but the OIDC path in a real browser and the Safari/Firefox workers are untested.
+- S367: the Tasks logout button is hidden upstream; the shim `auth.signOut` was fixed by S368 (see the S368 line).
+- S367: the OIDC bridge gate (the six bridge gate tests against the fake-provider verifier) is not built; the gate still uses the development verifier, and OIDC is covered by Go tests with a fake provider.
+- S367: the bridge accepts only RS256 and ES256 ID tokens, requests only the `openid` scope and uses `sub`; Authentik providers without a signing key (HS256) are not supported.
+- S367: Tasks (upstream, shared with real Puter) mints a dataset epoch per device on first boot of an empty account. Two devices booting at the same moment each seed their own epoch and the later-minted one replaces the other wholesale (`store.js` `#mergeCloud`, "adopt whichever dataset was minted later"), so the loser device's pre-sync edits are dropped; both converge. The gate boots the second device after the first has synced and has a separate test pinning the simultaneous-boot behaviour. The bridge is not at fault (6/6 then 7/7 gate tests pass).
+- S367: `run_compose_check.sh` cannot sign in (no identity provider in the stack); sign-in is covered by Go tests with a fake provider and the browser check with the dev identity. A real-Authentik run over Compose remains.
+- S367: quotas count key plus value bytes and compute usage with a SUM per write; fine at appliance scale, add running counters if a person's object count grows large. Exports run as root on a volume owned by uid 65532, so their output is root-owned unless the caller changes it.
+- S367: image reproducibility is shown on one machine with one Docker builder (identical layers and, with `SOURCE_DATE_EPOCH`, identical image ID); `npm ci` fetches from the registry and relies on the lockfile integrity hashes, there is no offline mirror.
+- S367: finished as a spike (owner decision 2026-11-02): Tasks runs on VM 2 under plain Docker Compose with a hand-made Authentik client and a separate Caddy container on port 8443. Not done and left for a later slice: an ADR and a catalog package for Everything apps, daemon-provisioned Authentik provider and application, an edge route at the appliance name (`/apps/tasks/`), access policy bindings (closed by default), Content-Security-Policy headers, and a cross-engine reproducible image (VM 2's Docker 26 and the local Docker 29 built different image IDs from the same source).
+- S368: the Tasks logout button is still hidden upstream (`env` is `app`); the shim's `auth.signOut` now POSTs the bridge logout with CSRF, so a later slice can show a Homestead sign-out control.
+- S368: the bridge `ORIGIN` is one `https://{{route_host}}`; a public-name origin (tunnel name) is not handled for Everything apps, so Tasks works at the appliance name only.
+- S368: the backup copies `data/` as is; a hook-based consistent SQLite snapshot (online backup before copy) is not wired.
+- S368: the Content-Security-Policy and the full sign-in flow are covered by Go and gate tests but have not been checked in a browser; the review plan is the check.
+- S368: bridge images are not byte-identical across Docker engines, are not in the update flow or `Prune`, and a new pinned archive or version bump is a manual catalog edit plus `sync-context.sh`.
+- S368: the dashboard and CLI craft status do not list bridge apps separately; they are built with the existing craft plan and build calls by app name.
+- S369: the upstream Projects tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S369: not run on VM 2 or through Authentik; the review plan S369 section is the owner checklist.
+- S369: cloud-drive picking, sharing and calendar feeds are not offered (no `ui`, `fs.getReadURL`, sharing); a later slice may add them with an exposure plan.
+- S369: the 8 MiB per-attachment limit is the app's own; the bridge enforces only the per-person and per-app quotas.
+- S369: `modified` is the bridge write time in Unix ms, strictly increasing per rewrite; restoring a backup does not preserve upstream timestamps.
+- S370: the upstream Records tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S370: not run on VM 2 or through Authentik; the review plan S370 section is the owner checklist.
+- S370: Records has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
+- S370: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
+- S370: attachments over 8 MiB fail with a generic "Could not upload the file" message; only the per-person and per-app quotas map to the storage-full wording.
+- S371: the upstream Notes tests were not run against the real bridge; the real-browser check and Go/gate tests cover the bridge path only.
+- S371: not run on VM 2 or through Authentik; the review plan S371 section is the owner checklist.
+- S371: Notes has no service worker (upstream has none), so the page cannot be reopened offline; a later slice may add a runtime worker as for Projects.
+- S371: the app runs with `env` set to `app`, so it shows no sign-out button; sign-out is the Homestead sign-out route until a small patch adds a menu entry.
+- S371: AI assist, read-only public page links and picking from a cloud drive are not offered; AI would need a local model backend and links an exposure plan, both a later slice.
+- S371: the unreachable publish handler and `backend.readURL` remain in the built source; they are refused by the bridge if ever called.
+- S372: the upstream Contacts tests (313/313) run against the pristine tree with a mock; they were not run against the real bridge, and the image build skips them (patched Smart add tests would fail), so a changed pin must re-run them by hand.
+- S372: not run on VM 2 or through Authentik; the review plan S372 section is the owner checklist.
+- S372: Smart add (needs an AI backend), "Add birthday to Calendar" and the Calendar suggestions (need the Puter desktop and a Calendar app) are not offered; a local model backend or a Homestead calendar link would be later slices.
+- S372: no browser-native replacement was added for the Puter desktop file drop or window title: OS drag and drop, the Import file picker and the export download link already work in a browser and are used.
+- S372: key-only `kv.list` still stops at 1000 entries; only the with-values form pages. No Everything app lists more than 1000 keys without values today.
+- S372: the store screenshots (about 5 MB) stay in the archive and the image because patches cannot delete files; the manifest no longer lists them. The unused `.well-known/mcp.json`, `robots.txt` sitemap line and social-card meta tags still name contacts.puter.com.
+- S372: the sign-in gate and service-mode panel in `main.js` still point at an absolute `/icon.svg`; neither is reachable under the bridge.
+- S372: a large address book (a few thousand contacts) loads in one page-by-page read but the app re-reads all of it on each load; no paging in the UI, and save while offline is not queued (the app shows an error).
+- S372: the account menu shows no identity because the bridge's user name is the opaque sign-in subject; a friendlier name needs the OIDC email passed through `whoami`.
+- S373: the upstream Inventory tests (722/722, 34 files) run against the pristine tree with a mock; they were not run against the real bridge and a changed pin must re-run them by hand.
+- S373: not run on VM 2 or through Authentik; the review plan S373 section is the owner checklist.
+- S373: barcode scanning with the camera (`getUserMedia`) was not exercised: headless Chrome has no camera. It needs HTTPS, which the appliance serves, and no Permissions-Policy blocks it; a hand check is in the review plan.
+- S373: the app keeps its own browser-side mirror (IndexedDB `inv-offline`) of the person's inventory and a write queue, so a signed-in person's data stays in that browser until a different person signs in there (the app then wipes it). Sign-out is hidden (`env` is `app`) so it never runs the app's own wipe; a Homestead sign-out that clears it is a later slice.
+- S373: with the Homestead service worker an offline page load shows the offline page, not the app shell, so the app's offline-first start (open the installed app with no connection) does not work; already-open tabs still queue writes.
+- S373: the whole inventory is a few large KV values (`inv:products:v2`, activity and so on, 8 MiB each at most) rewritten on change; a very large inventory could hit the value limit.
+- S373: the unreachable landing page and some error strings in the built JS still say Puter and link to other sites (promotional links, not scripts); the visible onboarding, settings and product form strings are patched.
+- S373: the public handbook and guides (about 50 pages upstream) are not shipped; a local help page would be a later slice.
+- S373: key-only `kv.list` still stops at 1000 entries; the app lists by prefix without values only for small prefixes.
+- S374: the upstream Time tracking tests (205/205, 10 files) run against the pristine tree with a mock; they were not run against the real bridge and a changed pin must re-run them by hand.
+- S374: not run on VM 2 or through Authentik; the review plan S374 section is the owner checklist.
+- S374: the app keeps a localStorage mirror (`hourly:cache:v1`) of the person's entries and a write queue, so a signed-in person's data stays in that browser until a different person signs in there (the app then wipes it). Sign-out is hidden (`env` is `app`), so the app's own wipe never runs; a Homestead sign-out that clears it is a later slice.
+- S374: with the Homestead service worker an offline page load shows the offline page, not the app shell, so the app's offline-first start does not work; already-open tabs still queue writes.
+- S374: the app skips its service worker on localhost and 127.0.0.1 (upstream), so a loopback-only appliance install gets no worker; the normal install serves a real host name.
+- S374: the app opens with an automatic backup (a full snapshot, last 8 kept) into `hourly-data/backups/` and re-writes whole month files; each person's quota (256 MiB) bounds both, and a very large backup history is not trimmed by Homestead.
+- S374: forgot-to-stop system notifications need the browser's permission and a page that stays open; not exercised.
+- S374: the unreachable sign-in view and the sign-out confirmation text and some error strings (for example the stub used when the SDK cannot load) still say Puter; the visible onboarding, Settings and main error strings are patched.
+- S375: the upstream Circuits tests (207/207, 20 files, jsdom) run against the pristine and the patched tree with mocks; they were not run against the real bridge and a changed pin must re-run them by hand.
+- S375: not run on VM 2 or through Authentik; the review plan S375 section is the owner checklist.
+- S375: the browser keeps a "recent projects" list of project names and the last-opened location in localStorage, so a second person in the same browser sees the first person's recent project names (opening one fails; the files are private on the appliance). A Homestead sign-out that clears it is a later slice.
+- S375: upstream ships and registers no service worker and the bridge's worker mechanism only replaces an existing one, so Circuits has no offline page and is not installable as a PWA; a lost connection shows the browser's error page and a save while offline fails with a message.
+- S375: (sharing is on since S439) the Puter file picker, "Open from the desktop" and the profile picture are absent.
+- S375: the board's WebGL2 rendering, the 3D view, the autorouter, KiCad import, Gerber, drill and fabrication export, printing and the component editor were not driven in a browser; only the kernel (design rule check, copper pours) is exercised.
+- S375: the page policy now allows `'wasm-unsafe-eval'` for any app whose build ships a `.wasm` file (WebAssembly compilation only; JavaScript eval stays refused); a policy per app in the catalog would be tighter.
+- S375: the committed `kernel.wasm` is upstream's prebuilt binary; the image build does not rebuild it from the Rust source in the archive, so the binary is trusted at the pin. A reproducible rebuild check is a later slice.
+- S375: the project file is written whole on every save (autosave included) and each save keeps a version snapshot under `Projects/.versions/`; the per-person quota (256 MiB) bounds both and old snapshots are trimmed only by the app's own rule.
+- S375: the unreachable sign-in strings, the keyboard-shortcuts and getting-started text and some error strings still mention Puter; the visible start page, account, open-project, About and status bar strings are patched.
+- S376: not run on VM 2 or through Authentik; the review plan S376 section is the owner checklist.
+- S376: the OpenCascade kernel (`replicad-opencascadejs`, LGPL-2.1-only) comes from npm at image build time and is not rebuilt from source; the licence texts ship in `public/licenses/` and the in-app source page (S423) links the upstream source at the bundled version.
+- S376: the 23 MB wasm is served uncompressed and the app has no service worker, so there is no offline page and the first load is heavy.
+- S376: sketching, STEP/STL/SolidWorks import and export, drawings and PDF were not driven in a browser; only boot, an extrude, save, reload and reopen were.
+- S376: the "recent files" list is kept in localStorage, so a second person in the same browser sees the first person's recent names (not content).
+- S376: the upstream tests (104) ran with mocks, not against the real bridge; the built image was not run in a real appliance.
+- S376: publish is hidden (sharing is on since S440); AI is disabled with no backend (a future AI slice would need an approved bridge).
+- S376: the app's unused-name TypeScript rules are relaxed so patched code compiles; unreachable strings still mention Puter.
+- S377: scenes, libraries, presets, snapshots and the autosave stay in the browser's IndexedDB (and the browser file system), separated by person with a per-person database name but not encrypted, not backed up and not on the appliance; clearing site data or changing browser loses them. Only settings (localStorage) go to the person's bridge storage, capped at 3 MB.
+- S377: concurrent tabs of one person overwrite the settings snapshot (last write wins).
+- S377: Python (Pyodide from a public CDN) and AI are off. The script console, Run Script and style modules need `unsafe-eval`, which the policy refuses, so they report that they cannot run; the "Allow Online Access" preference text still mentions them.
+- S377: no service worker, so there is no offline page; the first load is about 8 MB of script.
+- S377: folder access ("Open Folder...") needs the File System Access API and works only in Chromium; other browsers get "Add Files..." and downloads (upstream behaviour, checked only by reading the code and by removing the API in headless Chrome, not in Firefox or Safari).
+- S377: exported files still say "Puter 3D" in their metadata and OBJ exports carry a `https://puter.com` comment; they are file-format identifiers (the USD reader depends on one) and were left unchanged.
+- S377: the Dockerfile guard was not extended for jsdelivr; the Pyodide reference is removed by patch and checked in the prepared tree and the built output by the tests.
+- S377: upstream's 3,018 tests ran against mocks, not the real bridge; the headless Chrome check covers boot, settings and database separation, reload and a second person, not modelling, rendering (no WebGL check), import or export.
+- S377: not run on VM 2 or through Authentik; the review plan S377 section is the owner checklist.
+- S377: a recovered autosave was read from the person's database on reload but upstream's own startup race (a font-load change before the read returns) can skip applying it; it was seen in headless Chrome and not investigated further.
+- S378: not run on VM 2 or through Authentik; the review plan S378 section is the owner checklist.
+- S378: the catalog icon is `mdi:image-multiple` because no cards or games icon is bundled in app-icons.ts; owner may bundle a better one (for example a playing-cards icon).
+- S378: the browser keeps a copy of the saved game and statistics (separated by person, not encrypted); the appliance copy is the one that is backed up. Anything written to unprefixed localStorage keys by an earlier visit is left in place, ignored.
+- S378: the headless check plays one stock move, not a game to a win; touch and drag play, undo and the Vegas bank are covered only by upstream's 209 unit tests, not by the real bridge.
+- S378: Solitaire shows no user name; if upstream adds one, it must show "Homestead user", not the subject.
+- S379: not run on VM 2 or through Authentik; the review plan S379 section is the owner checklist.
+- S379: the catalog icon is `mdi:image-multiple` because no grid or puzzle icon is bundled in app-icons.ts; owner may bundle a better one.
+- S379: the browser keeps a copy of records and the puzzle in progress (separated by person, not encrypted); the appliance copy is the one that is backed up. The inline theme script reads one unprefixed settings key (never written), so a person's theme choice applies after the app starts, not before first paint.
+- S379: the headless check places one digit, not a full puzzle to a solve; the daily puzzle, hints, pencil marks, touch input and the solved dialog are covered only by upstream's 333 unit tests, not by the real bridge.
+- S379: the daily puzzle uses the browser's local date; two people see the same puzzle by design. Nothing online is involved.
+- S380: not run on VM 2 or through Authentik; the review plan S380 section is the owner checklist.
+- S380: the AI receipt reading ("AI OCR") is not shipped and no local OCR replaces it: every field of an expense is typed by hand. A local or owner-run reading engine would need its own slice and ADR.
+- S380: receipts are limited to 8 MB each (the bridge's per-file limit; upstream allowed 10 MB). A PDF receipt cannot be previewed in the app (the page policy has no frame source); it can be downloaded. The headless check stores two image receipts (one just under 8 MB) and refuses one over; PDF receipts, the receipt viewer and download are not driven in a real browser.
+- S380: the browser keeps only the chosen theme (separated by person, not encrypted); everything else is on the appliance. The inline theme script reads one unprefixed key that is never written, so a person's theme applies after the app starts, not before first paint.
+- S380: the catalog icon is `mdi:piggy-bank-outline` (also Actual Budget's) because no receipt or cash icon is bundled in app-icons.ts; owner may bundle a better one.
+- S381 (`api-client`): deferred by the owner on 2026-11-02. It needs the bridge to make network requests for the person (`puter.net`), which no other Everything app has and which could reach the local network unless fenced. **Un-deferred by the owner on 2026-11-03 under ADR-058** (Accepted): any person with app access, public addresses only after DNS resolution with the connection pinned, redirects re-checked, size and time limits, every request logged. Packaged after the `net` slices (S434, S435) as S436.
+- S380: the headless check adds expenses and receipts; reports, statement import and reconciliation, the dashboard totals, CSV and JSON export, backup restore and sample data are covered only by upstream's 79 unit tests, not by the real bridge. Delete all data now removes the receipts folder recursively; that path is covered only by the pinned patch test, not driven in a real browser.
+- S423: the source offer was proven with Go tests, a Python test and a headless Chrome check against the dev bridge; it was not run on VM 2 or through Authentik, and the image build was run once for one app.
+- S423: only the bridge's own `GET` route serves the offer; a person who is not signed in gets a sign-in redirect (page) or 401 (tarball). That is a deliberate reading of AGPL section 13 (the offer is to the people who use the app, and all of them are signed in); the owner may widen it.
+- S423: the offer covers the app, Homestead's patches, added files, the shim and the image recipe. The Go bridge (a separate program, MIT) and the npm dependencies fetched at build time are not in the tarball; their sources are public upstream and pinned by `package-lock.json` in the archive.
+- S423: the Parametric offer links upstream source at the bundled version (replicad-opencascadejs 1.1.0 and Open CASCADE Technology) and the licence text served with the app; it does not ship the C++/Emscripten sources or a relinking kit, so a person who wants to replace the `.wasm` module builds it from upstream themselves.
+- S423: the Source link is a fixed corner link; it was checked for overlap in headless Chrome at one viewport for the three apps, not in every dialog or on small screens.
+- S423: the offer text and links are in English only and the tarball is rebuilt with each image, so its checksum changes when the recipe changes (it is reproducible for the same inputs).
+- S425: the registry has no remote surface yet; the daemon runs `people purge` on People removal in S427, and grants, read links and event streams join the purge as S426, S430 and S431 add them.
+- S425: a person whose token has no `preferred_username` signs in and can use the app but has no name; the one-line explanation in the page is added with the sharing UI (S428), and until then `getUser` answers "Homestead user".
+- S425: the 24-hour recheck of session age for shared operations arrives with the first shared operation (S428); nothing in this slice reads the age.
+- S425: the Homestead sign-in plan does not pass `-oidc-groups` yet; the bridge accepts it (flag or `HOMESTEAD_EVERYTHING_OIDC_GROUPS`) and the daemon wiring is left to the slice that changes the Everything package environment.
+- S425: the whoami and session answers no longer carry the `sub`; the development identity names people by subject for the gate only.
+- S426: the share-attempt rate limit (60 per hour per person per app) and the 24 hour session-age recheck for recipient operations are enforced where the first remote share operation lands (S428), since the store has no caller yet.
+- S426: kv `listSharedByMe`/`listShared` cursors, fs `readdir`/`stat`/`rename` through a grant, and `{handle}` list resolution are handler concerns left to the SDK slices; the store provides the resolved owner scope and key.
+- S426: no per-grant byte cap; a trusted writer can fill the owner's quota (as ADR-058 accepts).
+- S427: a pending purge is retried by a two-minute timer only, not at the moment the app starts; a stopped app that starts leaves up to two minutes of shared access.
+- S427: disabling a person in People does not purge (ADR-058 purges on removal and on app revoke only); Authentik refuses new sign-ins and shared operations need a session under 24 hours.
+- S427: a person who was never recorded in an app's `people` table (never signed in) matches nothing, so the purge reports done; a later purge of a name reused by someone else is guarded only by cancelling pending purges when access is granted again.
+- S428: the definition flag `sharing` is realised as the bridge's `-sharing` flag (env `SHARING=1`, default off); no package or catalog manifest sets it yet, so sharing stays disabled in every shipped app until S437 wires it (prepare_app does not read `sdk_surface.sharing` either).
+- S428: `puter.appID` is known only after the first `auth.getUser()` or share reply (or `config.appID`), because serving it synchronously would need a new meta tag in the app shell; S437 should check Tasks' use of it before the first `getUser`.
+- S428: `kv.unshare` of an unknown, foreign or already revoked handle answers `subject_does_not_exist` (what Tasks reads as "nothing left to stop"), not `kv_handle_not_found`.
+- S428: the share-attempt limiter is in memory per bridge process (a restart resets it); `kv.share.received` notifications and `kv:<handle>:*` events wait for S430.
+- S428: with the shim's `kv.share` defined, Tasks reports collaboration mode `kv` even while sharing is off; its UI stays hidden until S437 and a `kv_handles_disabled` reply falls back to links there.
+- S429: no per-grant byte cap: a trusted folder writer can fill the owner's quota (ADR-058 accepts this).
+- S429: `fs.share.received` / `fs.share.revoked` notifications wait for S430; recipients poll `fs.listShared`.
+- S429: `fs.getShares` reports only live direct and folder-inherited grants of the caller's own paths; grants made on a path that later changes between file and folder keep the type recorded at share time.
+- S429: Circuits (S439) and Parametric (S440) open and save shared files (browser-checked).
+- S429: no `fs.copy`/`fs.move`/`mkdir` exist in the shim, so nothing else needed grant support.
+- S430: events are in memory per bridge process. Changes made by another process (the `people purge` and `grants revoke` tools, import) reach streams only through the 25 s heartbeat re-check (streams end or drop the handle and send `gap`), not as live events.
+- S430: fs revocations caused by deleting or renaming a shared file send no `fs.share.revoked` notice; recipients see it on their next `fs.listShared`.
+- S430: an open stream re-validates the session each beat, which refreshes the session's last-seen time, so an open tab does not idle out (the absolute lifetime still applies).
+- S431: a link minted on the public name and the edge route for `read`/`view` are S433 (done).
+- S431: there is no per-app definition switch for read links and no `read_links` entry in `sdk_surface` yet; `fs.getReadURL` works on every Everything bridge. The packages' `refused` lists for Tasks and Notes still name it until S437 and S438 re-enable those UIs.
+- S431: rate-limit state is in memory per bridge process (a restart resets it). `X-Forwarded-For` is believed from loopback and private peers by default (`-trusted-proxies`); a bridge whose port is published to a LAN must set it to `none`. Not tested against a live Caddy.
+- S431: read links are not exported or imported (only a hash is stored, so a restored link could not be re-issued); the `links` tool and People purge are the only revokers besides deleting the file.
+- S431: the viewer route (`/_homestead/view/<token>`) is S432 (done).
+- S432: the public name and its edge route are S433 (done). The apps still show their own links until S437 and S438.
+- S432: only the two named formats have a renderer. Notes tables are flattened to cells in a row, math is shown as the text the snapshot carries, and Notes images, ink and embeds are a marker. Other formats (Circuits, Parametric, Contacts) need their own renderer slice.
+- S432: the viewer output is not cached and is rendered per request (bounded to 1 MiB of output and 4 MiB of HTML per outline); the per-client limiter is the only throttle.
+- S433: if the dashboard's public name changes or is removed, the app's stored public read origin and its tunnel route flag stay as they were; the owner must plan the removal and a new exposure by hand.
+- S433: a link minted on the public name needs the app itself to be reachable there with a session (an OIDC redirect URI and public sign-in for a published app); until an app is published with sign-in, links are minted on the local name and only opened on the public one.
+- S433: the viewer link is not yet shown in the Tasks and Notes UIs (S437, S438).
+- S433: the bridge decides that an origin is a public name by shape (https, a host name, no private suffix); a lookalike private name in the public form would be answered `read_links_not_exposed` rather than refused.
+- S434: the net operation, request/response header rules, size caps, per-person and per-app limits, `net_log` and the `net-log` tool are S435; the shim `puter.net.fetch` is S435/S436.
+- S435: the bridge switch (`-net` / `HOMESTEAD_EVERYTHING_NET=1`) is set by hand or by the `api-client` package (S436); the daemon does not yet turn it on from the app definition's `sdk_surface`.
+- S435: `net.fetch` limits are in memory (a bridge restart resets the per-minute, per-day and concurrency counts); the `net_log` keeps 30 days or 10,000 rows for the whole database, so a busy person can push out older rows of others. The daemon does not yet show `net_log` (the `net-log` tool is the owner's view).
+- S436: user scripts (pre-request and test scripts) run upstream in a sandboxed `srcdoc` iframe and blob workers; the page policy (no frame source, `default-src 'none'`) probably blocks them. Not observed in a browser and not patched to fail visibly; the review plan step 8 records what the owner sees.
+- S436: collections, environments and history live in the browser's IndexedDB (per person only through the person-tagged database name, not encrypted) and are mirrored to the bridge's per-person storage by the app's own sync; clearing site data loses the local copy until the next sync pulls it back. The mirror calls `fs.mkdir`, which the shim does not offer; the app copes, the folder is created by the first write.
+- S436: redirects are always followed, cookies are not passed on and only allowlisted response headers are returned (the fence's rules); the app's cookie jar and manual-redirect settings have no effect. The response is limited to 8 MB and a request body to 2 MB, and the per-person limit is 60 requests a minute.
+- S436: the package turns the net switch on through the `HOMESTEAD_EVERYTHING_NET=1` environment value in the catalog entry; the daemon still does not read `sdk_surface` to decide it.
+- S436: the catalog icon is `mdi:cloud`; the owner may choose a better bundled icon.
+- S436: `ui/share-dialog.js` still carries upstream's "Verify your Puter account to share." strings; the dialog is unreachable because sharing is hidden, so they are not patched.
+- S437: Tasks still carries upstream's in-app shared-list page (`#/shared?u=`) and its "Powered by Tasks on Puter" footer; no link points to it since the view-only link is the bridge viewer.
+- S437: the calendar feed (`.ics` read link, up to 365 days) is shown again; whether a calendar client can reach it from outside the LAN depends on the S433 public read-link plan and was not tried with a real client.
+- S437: `perms.request` always resolves true for Tasks' own prefix (no consent prompt); the owner may want a per-person consent screen later.
+- S438: Notes has no person-to-person sharing or live updates (upstream offers read links only); the sharing switch stays off for the package. Sharing a notebook between people would need new upstream-free UI and is not planned.
+- S438: the viewer shows page text only; pictures, handwriting, tags, tables' layout and the page background are not shown (marked "not shown in this viewer"). Upstream's in-app `#view=<url>` page is still in the bundle but no link points to it.
+- S439: Circuits has no read links and its project files have no viewer renderer (S432); an outsider cannot see a project, only people with Circuits access who are shared with by name. A Circuits viewer is a later slice if the owner wants link sharing.
+- S439: a shared project is a single file grant: the recipient can open and overwrite it (edit mode) but not rename, delete or re-share it; the app's Rename and Delete on a shared project show an error, and its version snapshots (History) go to the recipient's own `Projects/.versions/`, not the owner's. The `manage` ("Can edit and share") choice is never offered (the bridge refuses it).
+- S439: two people editing the same project overwrite each other (upstream says so in the dialog); there is no live update or merge. Edit saves count against the owner's quota.
+- S439: the share dialog's email recipients are refused by the bridge (no emails); the error text is the bridge's code (`user_does_not_exist`, `cannot_share_with_self`) rather than a sentence.
+- S439: browser-checked with the development identity only; no live Authentik two-person run, and Firefox/Safari are untried. The upstream vitest suite on the patched tree is 206/207: the one failure, "links to the source code on GitHub", asserts the link the S375 patch removes.
+- S439: the shim now fails a `fs.write` the bridge answered 404 (a write through a revoked or unknown share) instead of reporting success; no other app relied on the old behaviour (gate and Go/Python tests pass).
+- S440: Parametric has no read links and its part files have no viewer renderer (S432); an outsider cannot see a part, only people with Parametric access who are shared with by name. A Parametric viewer is a later slice if the owner wants link sharing.
+- S440: a view-only share is opened by the app as a detached copy: Save makes a new part in the recipient's own Parts (named like the original), not a write to the owner's file. An edit share is a single file grant: the recipient overwrites the owner's file but cannot rename, delete or re-share it (the app's Rename on a shared part saves the content but shows "the file could not be renamed"). The `manage` choice is never offered (the bridge refuses it). Edit saves count against the owner's quota.
+- S440: two people editing the same part overwrite each other (upstream says so in the dialog); there is no live update or merge.
+- S440: the share dialog shows the bridge's code for some refusals (email address: "Could not share: Share with a Homestead username, not an email address").
+- S440: browser-checked with the development identity only (Chrome, headless); no live Authentik two-person run, no Firefox/Safari. The upstream vitest suite is 104/104 on the patched tree. One earlier run of the check showed a "Geometry engine failed to start" toast (CSP unsafe-eval message) on a page the kernel then built in; it did not recur in the final passing runs and the CSP-violation hook stayed empty, but it is unexplained.
+- S440: the OpenCascade LGPL notice, licence texts and S423 source offer are unchanged (the patches do not touch them); sketching, import/export and drawing were not driven with a shared part.
+- ADR-058 (S441), unproven live, listed once; the owner checks them in the "ADR-058 owner acceptance (S441)" section of `docs/reviews/EVERYTHING_REVIEW_PLAN.md` on VM 2 with Authentik. Everything below was proven only with the development identity, fake resolvers or headless Chrome, never with real Authentik people or the real edge:
+  - Two real Authentik people sharing in Tasks, Circuits and Parametric, the `profile` claim shape and a real browser (S437, S439, S440; review plan steps 1-3). Firefox and Safari are untried (steps 3, record line).
+  - The purge on People removal against real apps and the audit `people.purge` (S427; step 4).
+  - Local read links, the calendar feed and a calendar client reaching it from outside the LAN (S437, S438; steps 5 and 6).
+  - The generated Caddyfile for the public read-link handle, the public name answering only `/read` and `/view` while app, data and events stay 404, and Notes and Tasks links through Caddy and Cloudflare (S433, S438; steps 6 and 7).
+  - Events streaming through Caddy and the Cloudflare tunnel without buffering (S430; step 8).
+  - A successful `net.fetch` to a real public host and a TLS handshake, the refusals in `net-log`, and the user-script behaviour in API Client (S435, S436; step 9 and the S436 step 8 record).
+  - Limits at their real values: net per minute, share attempts per hour, response and body sizes, read-link expiry (step 10).
+
+- Release trust (S443, from the platform run; PLAT-UPDATE-3, PLAT-DOCTOR-1): plain builds still embed the placeholder key, so Doctor shows release-trust amber on dev deploys; release builds embed the owner's key from `release/release.pub` (2026-11-08). Verify has nothing real to verify until the first signed release.
+
+- Curated install copy (found in S443): the dashboard spec `curated-copy.spec.ts` fails at HEAD because 17 catalog packages have no entry in `curated-copy.ts` (actual-budget, api-client, bookstack, circuits, contacts, expense, inventory, memos, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja). Pre-existing, not touched by S443; with ADR-059 most need only a "nothing to do on first run" line.
+
+- S444: the Gitea administrator's one-time password is read from `gitea admin user create --random-password` output because the command has no stdin/file password option; re-check on every Gitea bump.
+
+- S446: while Authentik sign-in is on, Memos password sign-in is off for ordinary users (the only way to refuse anonymous password sign-up, since registration must stay open for Authentik's first sign-in). People who sign in through Authentik therefore never have a password. The owner administers Memos as `homestead-admin` at `/auth/admin`; making the owner's own Authentik account an administrator is not possible (Memos never gives OIDC users a role, and links no account by name).
+- S446: Memos's declarative `users` (bootstrap users) were not used: the first-user API (`needsSetup`, CreateUser) was verified against 26.10.0 instead. Re-verify both on every Memos bump.
+- S447: Actual Budget's owner is seeded in its account database (users table) at install; verified against 26.10.0, re-verify on every bump (pin test `TestActualBudgetRoutinePinnedToVerifiedVersion`). Budgets made under the password login while sign-in is off belong to Actual's password account and are not moved to the owner when sign-in is turned on later (Actual moves them only when no named user exists).
+- S447: the dashboard curated first-login copy for 16 other packages (api-client, bookstack, circuits, contacts, expense, inventory, notes, parametric, projects, records, solitaire, sudoku, tasks, three-d, time-tracking, vikunja) is the generic "sign in or follow its setup instructions" line, true but not specific; write real copy in each app's own acceptance slice.
+- S448: Authentik 2026.8 sends `email_verified=false` for every user. Mealie's check is turned off in its package; other apps that require a verified email (Komga S411, Vaultwarden S414) have not been re-checked against it.
+- S449: the redirect is a 307 to the first public name; a client that does not follow redirects or drops credentials on a host change (curl -L with basic auth, webhook senders) must use the public name of a single-origin app. LAN use of these four apps needs the tunnel and internet while published (ADR-060).
+- S451: Navidrome's `/share/*` and `/rest` stay open at the gate by design (own credentials; share links are open once the owner creates one); there is no per-path policy yet for shares. Cloudflare analytics for the window Kuma was public are not readable by the appliance token and Caddy logs only errors, so whether its open paths were requested from outside cannot be told. Uptime Kuma's tunnel exposure is now also covered in Doctor only as a local-state check, not a live reach probe.
+- S451: removing a public name from a forward-auth app (Kuma) leaves its Authentik provider on the old name: the LAN name answered 404 from the outpost until `apps sign-in plan` and `apply` were run again. The removal plan warns about it; it should chain the sign-in update (as the add does for token-kept apps) or the status should flag it.
+- S452: Komga's library administration (scan, add library) needs its recovery administrator; people who sign in are ordinary users and Komga has no admin group claim.
+- S453: Paperless-ngx documents are private to the uploader (object permissions); there is no shared household library by default. Sharing is done in Paperless (owner/permissions on a document or share links). Public sign-in on a published Paperless-ngx name was not tested live.
+- S453: the install wizard (i1 flow) ticks "Also publish" by default for Paperless-ngx's address; check that default matches the checklist's local-first recommendation.
+- S454: Vaultwarden's login page still shows "Create account" (the web vault does not hide it); the server refuses registration. The public name sign-in and backups/uninstall checks were not run. Authentik's email_verified is overridden per app by the groups claim only where a manifest sets `verifiedemail`; Komga and Mealie keep their own app-side switches.
+- S455: Vikunja's own login form still exists for local accounts (none can be created; it stays so a recovery account is possible); no group-to-team mapping. Public name sign-in, backups and uninstall checks were not run.
+- S456: restoring grants runs when sign-in is applied; a person added to Authentik by hand to a group Homestead has no grant for is still untouched (drift shows it).
+- S457: uninstall removes the app's edge routes but not the per-host TLS leaf the appliance issued for its names; it stays until the next leaf cleanup.
+- S458-S459 acceptance (Immich): every person who signs in to Immich for the first time lands on Immich's own per-person welcome tour (`/auth/onboarding`, Theme first); it cannot be preset because each account only exists after its first sign-in, and it is skipped by opening the photos page. Immich's owner (akadmin) admin role was recorded here as missing, but the `immich_role` claim was already mapped; S460 re-verified it live (see below).
+- S458-S459 acceptance (Jellyfin): `<bulk>/jellyfin/media/*` is root-owned mode 0750, so the checklist's "copy a video in" needs sudo on the host. BookStack's local login form is absent (AUTH_METHOD=oidc), so its generated administrator password cannot be used to sign in; the Editor role cannot create shelves (Admin only).
+- Acceptance run, public names for Nextcloud, Immich, Jellyfin, BookStack and Linkding were not published, so public-name sign-in was not tested for them; day-2 backup steps are not yet due.
+- S460 (Immich welcome tour, evidence): Immich 3.3.0 has no setting that skips the per-person `/auth/onboarding` tour. The only switch is the per-user metadata row `onboarding {isOnboarded: true}`, which the server writes only from `PUT /users/me/onboarding` (the person's own session) and from a one-off 2025 migration for accounts that already existed. Neither the OAuth auto-register path (`auth.service.js` creates the user with no metadata) nor the admin create-user API sets it, and the admin API cannot write another user's metadata. The remaining routes are a Postgres insert trigger on Immich's user table or a poller, both unsupported schema changes in Immich's database that its migrations do not know about; they are not shipped. Re-check on each Immich bump (the pin test names the version).
+- Acceptance PLAT-UPDATE-3 (low): `updates verify` and the dashboard Verify answer "artifact, checksums, and signature must each be a readable regular file" for any file the daemon cannot see (the unit has PrivateTmp and ProtectHome, so /tmp, /var/tmp and home directories are invisible). The message should name those paths; /srv works.
+- Acceptance PLAT-PEOPLE-3 (low): a Homestead person whose username already exists as a local account in an app (Gitea `blairquinn`, created by hand earlier) cannot sign in: Gitea shows "Link to existing account / Registration is disabled". Not a Homestead defect for apps Homestead installs, but People add does not warn when the app already has that username.
+- Acceptance PLAT-DOCTOR-1 (info): with the appliance resolver off, Doctor shows one amber app-reach item per app name ("Your devices cannot resolve X.lan") on a setup that uses hosts-file names; 18 of 21 ambers on VM 2.
+- Acceptance run, Everything apps (low, Tasks/Projects/Records/Notes/Contacts/Inventory/Time tracking on VM 2): (1) (Tasks Puter wording fixed in S467); (2) an oversized attachment gives a generic "Could not upload" toast that names no limit (Projects EV-PROJECTS-8/10, Records EV-RECORDS-11); (3) (offline page on a stopped container fixed in S468 for the eight apps with a worker; see the S468 note below); (4) Inventory is a path-routed SPA, so a hard load of `/apps/inventory/products` answers 404 where the other apps use `#/` routes; (5) Notes read-link dialog: the "7 days" duration option did not register in the headless run, so the default duration was used (not re-checked by hand); (6) camera barcode scan (EV-INVENTORY-7) and installing a PWA (EV-TIME-TRACKING-8) need a real device; typed-code lookup and the manifest shortcut were checked instead. Backups (day 2) and END uninstall steps are not due yet.
+
+## Everything acceptance, second run (circuits, parametric, three-d, solitaire, sudoku, expense, api-client, ADR-058)
+
+Found on VM 2 in the browser run; not fixed in this pass.
+
+- **Public name refusal message (low, EV-API-CLIENT-7):** the appliance's own public name resolves to IPv6 Cloudflare addresses and is refused with the generic "could not be reached" text.
+- **Low:** API Client empty state says "save, share and run them together" though there is no sharing; 3D drops an unsaved UV sphere across reload (S377 startup race); a stray "false" text in Expense (the Expense welcome dialog is gone in S467); Expense CSV content not inspected in headless; EV-ADR058-8 (events over the public name), the 61st share in an hour, an expired read link and the day-2 backup check were not run.
+
+### Craft run 2 (figcraft, soundcraft, designcraft) found on VM 2
+
+- **Medium (CRAFT-FIGCRAFT-5, CRAFT-SOUNDCRAFT-5): FigCraft and SoundCraft keep no work in the browser.** (DesignCraft was in this item; S491a re-checked it and Save works, see below.) After drawing, trimming or laying out a document and pressing Ctrl+S, a reload shows an empty or demo document; no file picker or download fires and localStorage/IndexedDB hold nothing. The checklist expects "kept only in this browser". The web builds ship no save/restore path (upstream); the fix is an upstream web save path or a Homestead glue shim.
+- **Medium (CRAFT-FIGCRAFT-4): FigCraft export produces no file.** The Export dialog (PNG..PDF) closes without a download, blob URL, anchor click or file-picker call; the shipped web glue has no download path. Same cause as above (upstream web build).
+- Test notes: SoundCraft Bounce Mix, DesignCraft Export Page as PNG, CADCraft DXF save and FilmCraft/EffectCraft open all work.
+
+- S467: Puter strings remain only in places a person does not reach on Homestead: sign-in-only screens, the hidden AI assistants (3D, Parametric, Contacts smart add), source comments, a few export-file headers, Records' upstream repo link, and the credit line "Built with Puter.js" (attribution kept on purpose). Add a phrase to `scripts/everything/wording.json` if one turns up in a live check.
+- S468: Notes, Circuits, Parametric, API Client, Records and 3D ship no service worker, so with the container stopped they still show Caddy's 502 (low). A fix would add a worker per app or an edge `handle_errors` page across the generated route shapes.
+- S469: done in S471 (`never_publish` removed; plan, install and Doctor read `publish`).
+- S470: (1) done in S471 (`cookie_path_root` warning; no manifest sets it yet, each package slice sets it after checking the app). (2) Existing sessions end at the S470 deploy (cookie rename).
+- S471: (1) A move that fails after the edge step (for example the sign-in re-plan) stops before the old name's removal, leaving an orphan connector entry and CNAME for a name no route carries; there is no one-step cleanup command (`apps public plan --off` finds no route name). Add a Doctor check or a resume. (2) Doctor's "public name with no matching approved plan" (ADR-061 section 6) is not added. (3) The move does not probe the new public address before removing the old name; `verify-path` checks the stored edge state only. (4) Read links (ADR-058) are not re-pointed because only Everything apps have them and those are already paths. (5) No packaged app uses the public-name move yet; S472 to S477 are its first users.
+- S479: (1) Rollback of a half-done move (put the app back on its old name) is not built: the app's settings (`app_url`, base path, host list, sign-in) already name the path, and no package has an inverse, so a rollback needs its own design and an owner decision. Finishing is built. (2) A leftover name no move left (a stray tunnel entry) is flagged by Doctor with `tunnel plan` as the fix, but no one-step removal exists. (3) Read-link re-pointing stays deferred: only Everything apps have read links and those are already paths. (4) The probe runs from the appliance, so it checks the public path through Cloudflare but not from other networks.
+
+- S472: (1) Two gated path apps would share one Authentik external host (the dashboard's), and a proxy provider matches one host; a second forward-auth path app needs its own design (Authentik domain-level mode or per-path providers). (2) Authentik's outpost behaviour for a Host other than the provider's external host was not tested; other dashboard names redirect to the canonical one instead. (3) Navidrome's music volume is still an anonymous volume, so Doctor shows `app-data` as unknown placement.
+- S473: Audiobookshelf 2.37.1 cannot serve under `/apps/audiobookshelf/`: the Nuxt client bakes `/audiobookshelf/` into its asset URLs and ABS has no client rewrite, so it keeps `audiobookshelf.<zone>` (`no_subpath`). Re-check only if upstream adds real base-path support for the client; a forward-only move back to a host name does not exist (VM 2 was reinstalled to undo the trial). The sign-in script's redirect subfolder (`authOpenIDSubfolderForRedirectURLs`) stays empty.
+- S474: Komga's `/apps/komga/` session cookie path and the mobile/OPDS clients (Komelia, Tachiyomi extensions) pointing at the old `komga.<zone>` name were not tested; clients need the new address. The old `komga.lan` TLS leaf directory stays (as in S457).
+- S475: Paperless-ngx's mobile and API clients (paperless-mobile, scanner uploads) pointing at the old `paperless-ngx.<zone>` name need the new address `/apps/paperless-ngx/`; the PAPERLESS_URL host stays the route host, so a public name that differs from the dashboard host was checked only through Django's same-origin CSRF rule. The old `paperless-ngx.lan` TLS leaf directory stays (as in S457).
+- S476: Linkding's browser extension and mobile clients pointing at the old `linkding.<zone>` name need the new address `/apps/linkding/`; bookmarklets already saved in browsers keep the old host. The old `linkding.lan` TLS leaf directory stays (as in S457).
+- S477: FreshRSS 1.30.4 cannot serve under `/apps/freshrss/` with Authentik sign-in: `Docker/FreshRSS.Apache.conf` hard-codes `OIDCRedirectURI /i/oidc/` and mod_auth_openidc 2.4.17 ignores `X-Forwarded-Prefix`, so the redirect URI never carries the prefix (trial in a throwaway container). It keeps `freshrss.<zone>` (`no_subpath`). Re-check if upstream makes the redirect path configurable; mounting a replacement Apache config would be a new ADR-level decision. The edge also sends no `X-Forwarded-Prefix` header.
+- S480: (1) Resolves S472 item 1: a second gated path app uses the shared provider (ADR-062), not one of its own. (2) An app behind the shared gate that is not published while the gate is on the public name has no valid LAN address (the gate answers on one host); S481 gates only the public path of craft apps, so this was untested until a second LAN-gated app exists. S504: the publish and sign-in plans now disclose it, naming each other gated app whose local address moves with the shared gate (the plan is digest-approved); the behaviour itself is unchanged (ADR-062 section 5). (3) Resolved in S481: the owner chose to keep the LAN open for craft apps. (4) The Authentik "my applications" list shows the shared gate application to every signed-in person (no group binding); hiding it (launch URL `blank://blank`) was not done. (5) The 403 page is plain text, not a branded page. (6) A group renamed by hand in Authentik stops matching at the edge until the sign-in is planned again; no Doctor check compares them.
+- S481: (1) A craft app is published in two approved steps (`apps public`, then `apps sign-in`); between them its public path answers 404 (fail closed), so there is no open window, but one approval is not yet enough. (2) With a published craft app the gate is on the public name, so an installed Navidrome that is not published has no valid LAN address (S480 item 2 now applies); Navidrome is published on VM 2. (3) Unpublishing a craft app leaves its gate record and groups; turn the gate off with `apps sign-in plan APP --off`. (4) The craft install wizard does not offer the gate; it is planned once the app is published. (5) FigCraft's 22 MB wasm takes about a minute to start through the tunnel in headless Chrome (checked on VM 2); not measured on a real browser or connection.
+- S483: (1) The export holds secret names, never values, so it needs no fresh sign-in; if a later export ever carries values, the reauth interceptor path (`X-Homestead-Reauth`) is the one to use. (2) Import writes the desired file and secrets only; it does not re-apply settings to running services, so the owner runs the usual plan/apply steps after a rebuild. (3) The Config page keeps showing the old settings after an import until it is reloaded. (4) The preview diffs settings only; it does not say whether a named secret already exists on this appliance. (5) Export on an appliance that never saved a configuration answers 404 "nothing configured yet" on the CLI and the dashboard (unchanged S234 behaviour). (6) A confirmed round trip of a real export needs the Cloudflare token value typed again; VM 2 was checked with a no-setting, no-secret document instead.
+- S488: `apps public plan|apply --route` (flag gap G8) has no dashboard field. Every one of the 46 catalog manifests has exactly one service with `exposes`, so an installed app has one edge route (its `.local` name is an alias of that route, not a second route); the plan's first route is the only choice. Revisit only if a manifest ever exposes two services or the owner adds a second edge route for an app by hand; then add a route select to the public-name form, shown when `routes.length > 1`, sent as `route` on plan and apply (the wrapper's `AppPublicRequest.route` already exists). S486's `PARITY_FLAGS.md` lists `--route` as `n/a` with this reason.
+- Flag-table depth (S486): `docs/PARITY_FLAGS.md` proves each named dashboard field exists in non-spec code, not that the control sends it for that command. Several fields are generic words (`password`, `enabled`, `label`); a stricter check would need per-control component tests or a browser run.
+- S491: FigCraft web build has no working document save or export (upstream gap, no Homestead shim, owner 2026-11-08). Request draft: `docs/upstream/figcraft-save-export.md`, not filed. Revisit when upstream ships web save/export; then re-run the checklist step.
+- S491: SoundCraft web build has no working document save or export (upstream gap, no Homestead shim, owner 2026-11-08). Request draft: `docs/upstream/soundcraft-save-export.md`, not filed. Revisit when upstream ships web save/export; then re-run the checklist step.
+- S491a: DesignCraft save works; the CRAFT-DESIGNCRAFT-5 failure was a harness problem (the run did not listen for the download event). Re-checked on VM 2 with `acceptDownloads: true` and `waitForEvent('download')` on the LAN and on `https://homestead.<domain>/apps/designcraft/` as owner through the shared gate: Ctrl+S, File > Save and Save As download `Untitled-1.designcraft` (a zip with `mimetype`, `meta.json`, `document.json`), Ctrl+E and the Export items download PNG, IDML, EPUB, interactive PDF, HTML, XML and Print Booklet PDF, and Open (Ctrl+O file chooser) reads the `.designcraft` file back with the drawn text intact. What remains true: there is no autosave, so the browser keeps nothing between visits; the person must keep the downloaded file. Save a Copy, Export PDF, Package and Export Text opened no download in the check (they probably ask for a dialog first); not followed up. The draft `docs/upstream/designcraft-save-export.md` is withdrawn to an optional autosave request, not filed.
+- S492: rotation re-wraps existing runs under the resolved backup destination only; runs on another mount that is not the `backup` class (or a destination that is unmounted at rotation time) are re-wrapped by running `backup identity rewrap` again. The old identity is kept on the appliance (`sys_backup_identity_retired`) and is never pruned automatically; pruning retired identities once every run has been re-wrapped is not built. A rotation never removes the old key's access to older runs: a compromised key still reads runs made before the rotation (the payload key is unchanged), so a leaked key needs those runs pruned or re-encrypted, which is also not built.
+- S505: rotation re-wraps in the background and no longer resumes: a re-wrap interrupted by a daemon restart is cancelled, not resumed, and Doctor (`backup-rewrap`) shows it as pending until `backup identity rewrap` (or the Backups page button) runs. Retired-key pruning is still not built; unreadable retired lines are skipped and counted, not repaired.
+- S493: `keygen.sh` needs `minisign` on the owner machine and was not run against the real binary here; S506 installs minisign in CI and makes the real-minisign test fail rather than skip there. Its logic is also tested with a stub. Retiring the embedded production key from a binary requires a new build; until then the Updates page can only remove it from the trusted list (it can be re-added).
+- S494: the guide has no search, no versioned archive of older guides and no PDF/print stylesheet (owner decision: none needed). Images must be local files in `docs/guide/`; remote images are dropped by design.
+- S494: `/guide/` needs a sign-in, so an anonymous visitor gets a bare 401 instead of a redirect to the login page; revisit if owners link to it from outside the dashboard. Plain builds (no `-tags embeddash`) and installs without `python3` have no guide (route not mounted, doctor does not flag it).
+- S494: the guide's written content is S495; every section page is a stub.
+- S499: every OIDC app's claim now lists only its own three groups (users, admins, owner) and answers to `profile` (the standard profile mapping is no longer bound). An app that must read a group outside its own set would need that said explicitly in its manifest; none does. The `groups` scope still works for apps that ask for it, because the profile mapping carries the groups claim. A future app that asks for `groups` WITHOUT `profile` would get no claims (none does).
+- S499: Komga's public-name denial: Casey's refusal shows in Komga's Authentik popup ("Permission denied"), not on Komga's login page; Komga's front end has no handler for a denied popup and Homestead cannot change that. Documented in the troubleshooting guide; a custom Authentik denial message was not built.
+- S497: `PAPERLESS_PROXY_SSL_HEADER` is in the manifest, so new installs have it; an install from before S497 keeps its Compose file without it until the owner sets it (the CLI `apps configure paperless-ngx --service webserver --set PAPERLESS_PROXY_SSL_HEADER='["HTTP_X_FORWARDED_PROTO", "https"]'`, done on VM 2) or an update re-renders it. Publishing Paperless-ngx on such an install shows a 403 CSRF error on the Authentik button until then; the public plan does not warn about it.
+
+- S498: the published-path LAN redirect (ADR-062 amendment) is by name only; an API client on the LAN that cannot follow a 307 has no per-client or per-path bypass (Komga OPDS, Paperless API). If the owner wants one, an explicit per-app bypass path in the manifest would be a new rule. The Navidrome and craft gate warnings still say "your local address stays open" in the sign-in plan text; the publish plan is the one that now states the redirect.
+- S500 (closed for removal by S507): Nextcloud admin rights are removed at once when a person is revoked from Nextcloud, demoted to user, disabled or removed in People (S507). A person taken out of the Nextcloud admins group in Authentik directly, outside Homestead, still keeps administrator rights until they sign in again; a session already open keeps its rights; there is no background sync. S507 finds the account by email (or uid), so a person with no email and a hashed uid is not found and keeps rights to their next sign-in. Nextcloud's own groups from user_oidc stay hashed; making them plain would need unique ids off, which renames every account that already signed in.
+- S500: turning Nextcloud sign-in off disables the `homestead_sso` app but leaves its files in `custom_apps/` and leaves any admin rights already given.

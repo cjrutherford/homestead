@@ -24,7 +24,7 @@ class TestBackupContract(unittest.TestCase):
         for symbol in ("type DatabaseBackup", "type BackupHook",
                        "func (d DatabaseBackup) Validate(",
                        "func (h BackupHook) Validate(",
-                       '"sqlite"', '"postgres"',
+                       '"sqlite"', '"postgres"', '"mariadb"', '"mysql"',
                        '"pre"', '"post"'):
             with self.subTest(symbol=symbol):
                 self.assertIn(symbol, src)

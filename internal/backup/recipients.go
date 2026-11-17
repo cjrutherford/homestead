@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -254,6 +255,31 @@ func (s *RecipientStore) RecordExport(fingerprint, actor string) (IdentityExport
 	return IdentityExport{ID: id, Fingerprint: fingerprint, Actor: actor, ExportedAt: at}, nil
 }
 
+// ExportBudget returns ErrExportRateLimited when another export record
+// would be refused. Rotation checks it before it changes any key so the
+// new key is never withheld for want of a record.
+func (s *RecipientStore) ExportBudget() error {
+	rows, err := s.db.Query(`SELECT exported_at FROM backup_identity_exports ORDER BY id DESC LIMIT ?`, MaxExportsPerHour)
+	if err != nil {
+		return fmt.Errorf("backup: export budget: %w", err)
+	}
+	defer rows.Close()
+	recent := 0
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return err
+		}
+		if t, perr := time.Parse(time.RFC3339Nano, raw); perr == nil && s.now().UTC().Sub(t) < time.Hour {
+			recent++
+		}
+	}
+	if recent >= MaxExportsPerHour {
+		return ErrExportRateLimited
+	}
+	return rows.Err()
+}
+
 const exportColumns = `SELECT id, fingerprint, actor, exported_at, acknowledged_at FROM backup_identity_exports`
 
 func scanExport(row *sql.Row) (IdentityExport, bool, error) {
@@ -382,6 +408,41 @@ func (s *RecipientStore) RenderYAML(path string) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// RewrapLast returns the summary of the last re-wrap (or the incomplete
+// marker a rotation left); ok is false when there never was one.
+func (s *RecipientStore) RewrapLast() (RewrapSummary, bool, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT summary FROM backup_rewrap_state WHERE id = 1`).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return RewrapSummary{}, false, nil
+	}
+	if err != nil {
+		return RewrapSummary{}, false, fmt.Errorf("backup: read re-wrap state: %w", err)
+	}
+	var sum RewrapSummary
+	if err := json.Unmarshal([]byte(raw), &sum); err != nil {
+		return RewrapSummary{}, false, fmt.Errorf("backup: re-wrap state is unreadable: %w", err)
+	}
+	return sum, true, nil
+}
+
+// SetRewrapLast records the summary of a re-wrap.
+func (s *RecipientStore) SetRewrapLast(sum RewrapSummary) error {
+	if sum.Failed == nil {
+		sum.Failed = []string{}
+	}
+	raw, err := json.Marshal(sum)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO backup_rewrap_state (id, summary) VALUES (1, ?)
+		ON CONFLICT(id) DO UPDATE SET summary = excluded.summary`, string(raw))
+	if err != nil {
+		return fmt.Errorf("backup: record re-wrap state: %w", err)
+	}
+	return nil
 }
 
 // RecipientsWithOwner returns the appliance recipient plus every owner

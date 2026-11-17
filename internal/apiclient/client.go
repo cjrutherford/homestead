@@ -280,6 +280,32 @@ func (c *Client) ImportConfig(ctx context.Context, document desired.Export, secr
 	return summary, nil
 }
 
+// PreviewImport asks the daemon to validate document text and list what
+// importing it would change, writing nothing (S483).
+func (c *Client) PreviewImport(ctx context.Context, text string) (desired.ImportPreview, error) {
+	var preview desired.ImportPreview
+	data, err := json.Marshal(map[string]string{"text": text})
+	if err != nil {
+		return desired.ImportPreview{}, fmt.Errorf("api: encode request: %w", err)
+	}
+	req, err := c.post(ctx, "/api/v1/config/import/preview", data)
+	if err != nil {
+		return desired.ImportPreview{}, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return desired.ImportPreview{}, fmt.Errorf("api: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return desired.ImportPreview{}, c.statusError(req, res)
+	}
+	if err := json.NewDecoder(res.Body).Decode(&preview); err != nil {
+		return desired.ImportPreview{}, fmt.Errorf("api: decode response: %w", err)
+	}
+	return preview, nil
+}
+
 type planEnvelope struct {
 	Valid     bool                `json:"valid"`
 	Effective map[string]any      `json:"effective"`

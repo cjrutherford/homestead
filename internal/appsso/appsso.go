@@ -39,6 +39,13 @@ const (
 	CAFile   = CAMount + "/ca.crt"
 	CADir    = "homestead-ca"
 	caHostFn = "ca.crt"
+	// BundleFile is the combined trust bundle (S410): it lives in the
+	// same directory, so the existing read-only mount delivers it.
+	BundleFile   = CAMount + "/" + bundleHostFn
+	bundleHostFn = "bundle.pem"
+	// JavaStoreFile is the Java trust store (S411), beside the bundle.
+	JavaStoreFile   = CAMount + "/" + javaStoreHostFn
+	javaStoreHostFn = "bundle.jks"
 )
 
 // ErrUnavailable marks a plan that cannot be made (HTTP 422).
@@ -203,6 +210,36 @@ type Inputs struct {
 	// signs in at the local address.
 	PublicAuthentikURL string
 	PublicWaiting      string
+	// StackNeedsSecret is set when the installed stack's Compose file
+	// lacks the wiring for the app's declared sign-in secret (installed
+	// before the manifest declared it, S403): applying rewrites it.
+	StackNeedsSecret bool
+	// OwnerEnv is the app service's environment in the override file
+	// now, so the plan can name values that sign-in replaces (S404).
+	OwnerEnv map[string]string
+	// EdgeSource is the edge network's address range, what a gated app
+	// trusts identity headers from (S418). Accounts and PeopleUsernames
+	// feed the forward-auth refusals.
+	EdgeSource string
+	// HostBlockRequired is set for an app that declares
+	// forwardauth.requireshostblock; HostBlockProblem is why Homestead
+	// cannot keep other users off its port now ("" when it can, S421).
+	HostBlockRequired bool
+	HostBlockProblem  string
+	Accounts          *AppAccounts
+	// AccountsFn reads the accounts when a plan needs them, so a status
+	// that is not planning never opens the app's database.
+	AccountsFn      func() *AppAccounts
+	PeopleUsernames []string
+	// OtherGates are the other apps at a path behind the shared Authentik
+	// gate (ADR-062), read from the edge table.
+	OtherGates []OtherGate
+	// EdgeRoutes is the whole edge table and GateTitles the display name
+	// of each gated app by its path: they let the plan say which other
+	// apps' local addresses move when this change moves the shared gate's
+	// canonical name (S504).
+	EdgeRoutes []docker.Route
+	GateTitles map[string]string
 }
 
 // published reports an app with a public name: its own tunnel names, or
@@ -219,6 +256,9 @@ func published(routes []docker.Route) bool {
 // Offered reports whether the app can be signed in to through Authentik
 // right now, and if not, why.
 func (in Inputs) Offered() (bool, string) {
+	if in.Manifest.SSO.ForwardAuth != nil {
+		return offeredForward(in)
+	}
 	switch {
 	case in.Manifest.SSO.OIDC == nil:
 		return false, fmt.Sprintf("%s has no Authentik sign-in adapter.", in.Manifest.Title)
@@ -251,14 +291,19 @@ type Plan struct {
 	AppSettings    []string              `json:"app_settings"`
 	Plugin         *catalog.PinnedPlugin `json:"plugin,omitempty"`
 	SignInURL      string                `json:"sign_in_url,omitempty"`
+	// PublicSignInURL is where visitors through the tunnel start, set
+	// while the app has a public name.
+	PublicSignInURL string `json:"public_sign_in_url,omitempty"`
 	// Access is the groups, owner membership, bindings and groups claim
 	// mapping (ADR-043), and AdminRoles says how the app's admin role is
 	// set from the admin group.
 	Access     *sso.Access `json:"access,omitempty"`
 	AdminRoles string      `json:"admin_roles,omitempty"`
-	Changes    []string    `json:"changes"`
-	Warnings   []string    `json:"warnings"`
-	Digest     string      `json:"digest"`
+	// Gate is set for a forward-auth app (S418): the edge gate.
+	Gate     *GatePlan `json:"gate,omitempty"`
+	Changes  []string  `json:"changes"`
+	Warnings []string  `json:"warnings"`
+	Digest   string    `json:"digest"`
 }
 
 func (p Plan) digest() string {
@@ -306,6 +351,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	if !in.Installed {
 		return Plan{}, unavailable("%s is not installed", m.Name)
 	}
+	if m.SSO.ForwardAuth != nil {
+		return buildForwardPlan(in, enable)
+	}
 	if m.SSO.OIDC == nil {
 		return Plan{}, unavailable("%s has no Authentik sign-in adapter", m.Title)
 	}
@@ -318,6 +366,10 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		Provider: ProviderName(m.Title), Application: m.Title + " (" + ClientID(m.Name) + ")",
 		ClientID: ClientID(m.Name), Plugin: m.SSO.OIDC.Plugin,
 		RedirectURIs: []string{}, AppSettings: []string{}, Changes: []string{}, Warnings: []string{},
+	}
+	exclusive := false
+	if x, ok := adapter.(interface{ Exclusive() bool }); ok {
+		exclusive = x.Exclusive()
 	}
 	if !enable {
 		if in.Applied == nil {
@@ -333,6 +385,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 				"Forget the sealed client secret and take the Authentik host entry and appliance root out of the app's override file.",
 				fmt.Sprintf("Delete the Authentik groups %s and %s and the groups claim mapping %q. The shared group %s stays.", x.Groups[0], x.Groups[1], x.ClaimMapping, sso.OwnerGroup),
 				fmt.Sprintf("People who signed in through Authentik keep their %s accounts; the local admin keeps working.", m.Title))
+			if exclusive {
+				p.Changes[len(p.Changes)-1] = fmt.Sprintf("People who signed in through Authentik keep their %s accounts. %s returns to its own login form, so its local password login works again.", m.Title, m.Title)
+			}
 		}
 		p.Digest = p.digest()
 		return p, nil
@@ -341,13 +396,15 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 		return Plan{}, unavailable("%s", why)
 	}
 	base := strings.TrimSuffix(in.Dashboard.AuthentikURL, "/")
-	if published(in.Routes) {
+	if published(in.Routes) || m.ServedByPath() {
 		// Browsers through the tunnel cannot reach the local name, so a
 		// published app signs in at Authentik's public address; the edge
-		// answers it on this box for the app's own calls (ADR-047).
+		// answers it on this box for the app's own calls (ADR-047). An
+		// app served by path shares the dashboard's origin, so it signs
+		// in there whether or not it is published itself (S408).
 		if in.PublicAuthentikURL != "" {
 			base = strings.TrimSuffix(in.PublicAuthentikURL, "/")
-		} else if in.PublicWaiting != "" {
+		} else if in.PublicWaiting != "" && published(in.Routes) {
 			p.Warnings = append(p.Warnings, fmt.Sprintf("Visitors through the tunnel cannot sign in to %s with Authentik yet: %s", m.Title, in.PublicWaiting))
 		}
 	}
@@ -357,13 +414,23 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	}
 	origins := Origins(in.Routes)
 	p.RedirectURIs = adapter.RedirectURIs(origins)
-	p.SignInURL = adapter.SignInURL(origins[0])
+	p.SignInURL = signInURL(adapter, m, origins[0])
+	for _, o := range origins {
+		if u, err := url.Parse(o); err == nil && !docker.IsPrivateName(docker.Hostname(u.Hostname())) {
+			p.PublicSignInURL = signInURL(adapter, m, o)
+			break
+		}
+	}
 	p.AppSettings = adapter.OnSettings(p.Issuer, p.ClientID)
 	roles := adapter.Roles(groupNames(m.Name))
 	access := buildAccess(m.Name, m.Title, in.OwnerSub, roles)
 	p.Access, p.AdminRoles = &access, roles.Note
 	noteRoles(&p, roles)
 	authHost := hostOf(base)
+	p.Warnings = append(p.Warnings, replacedOwnerEnv(in, m, adapter, p)...)
+	if in.StackNeedsSecret {
+		p.AppSettings = append(p.AppSettings, fmt.Sprintf("%s's stack file is rewritten to deliver the sign-in secret: only the secret's entry, its reference and the file-path variable are added to compose.yaml, then the app restarts.", m.Title))
+	}
 	p.AppSettings = append(p.AppSettings,
 		fmt.Sprintf("Service %s resolves %s to the appliance edge and trusts the appliance root (%s, read-only).", m.SSO.OIDC.Service, authHost, CAFile))
 	switch {
@@ -372,6 +439,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 			fmt.Sprintf("Create the OAuth2/OpenID provider %q (client id %s, confidential) and the application %s in Authentik.", p.Provider, p.ClientID, p.Application),
 			"Generate a client secret and seal it in the secret store; it is never shown or logged.",
 			fmt.Sprintf("Set up %s to sign people in through Authentik. Accounts are created at first sign-in; the local admin keeps working.", m.Title))
+		if exclusive {
+			p.Changes[len(p.Changes)-1] = fmt.Sprintf("Set up %s to sign people in through Authentik only. Accounts are created at first sign-in. %s's own login form stops working while sign-in is on.", m.Title, m.Title)
+		}
 	case sameList(in.Applied.RedirectURIs, p.RedirectURIs) && in.Applied.Issuer == p.Issuer && pluginState(p.Plugin) == in.Applied.PluginVersion && sameAccess(in.Applied.Access, p.Access):
 		p.Changes = append(p.Changes, "Nothing changes: sign-in with Authentik is on and matches the app's names. Applying checks Authentik and the app again.")
 	default:
@@ -396,6 +466,9 @@ func BuildPlan(in Inputs, enable bool) (Plan, error) {
 	if p.Plugin != nil {
 		p.Warnings = append(p.Warnings, fmt.Sprintf("%s uses the third-party plugin %s %s, downloaded from %s and refused unless its SHA-256 is %s.",
 			m.Title, p.Plugin.Name, p.Plugin.Version, p.Plugin.URL, p.Plugin.SHA256))
+	}
+	if w, ok := adapter.(interface{ PlanWarnings() []string }); ok {
+		p.Warnings = append(p.Warnings, w.PlanWarnings()...)
 	}
 	p.Warnings = append(p.Warnings, "Applying needs an Authentik API token, which can do anything an Authentik administrator can. It is used for this apply only, unless you kept the dashboard sign-in token.")
 	p.Digest = p.digest()
@@ -485,6 +558,8 @@ type Status struct {
 	Adapter   string                `json:"adapter,omitempty"`
 	Plugin    *catalog.PinnedPlugin `json:"plugin,omitempty"`
 	SignInURL string                `json:"sign_in_url,omitempty"`
+	// PublicSignInURL is the sign-in address on the app's public name.
+	PublicSignInURL string `json:"public_sign_in_url,omitempty"`
 	// TokenKept says the dashboard sign-in token is sealed, so applying
 	// needs no token.
 	TokenKept bool `json:"token_kept"`
@@ -500,6 +575,9 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	if in.Manifest.SSO.OIDC != nil {
 		st.Adapter, st.Plugin = in.Manifest.SSO.OIDC.Adapter, in.Manifest.SSO.OIDC.Plugin
 	}
+	if in.Manifest.SSO.ForwardAuth != nil {
+		st.Adapter = ForwardAdapter
+	}
 	st.Offered, st.Reason = in.Offered()
 	if !in.Installed {
 		st.Offered, st.Reason = false, fmt.Sprintf("%s is not installed.", in.Manifest.Title)
@@ -507,10 +585,58 @@ func BuildStatus(in Inputs, tokenKept bool) Status {
 	st.OpenToAll = st.Enabled && in.Applied.Access == nil
 	if st.Enabled && st.Offered {
 		if p, err := BuildPlan(in, true); err == nil {
-			st.SignInURL = p.SignInURL
+			st.SignInURL, st.PublicSignInURL = p.SignInURL, p.PublicSignInURL
+			want := pluginState(p.Plugin)
+			if p.Gate != nil {
+				want = p.Gate.Revision
+			}
 			st.Replan = !sameList(in.Applied.RedirectURIs, p.RedirectURIs) || in.Applied.Issuer != p.Issuer ||
-				in.Applied.PluginVersion != pluginState(p.Plugin) || !sameAccess(in.Applied.Access, p.Access)
+				in.Applied.PluginVersion != want || !sameAccess(in.Applied.Access, p.Access)
 		}
 	}
 	return st
+}
+
+// signInURL is where a person starts signing in. Jellyfin serves under
+// its app path (BaseUrl) even on a name of its own, so an origin without
+// that path gets it (S400); one that has it already is left alone.
+func signInURL(a Adapter, m catalog.Manifest, origin string) string {
+	if _, ok := a.(jellyfin); ok {
+		if path := strings.TrimSuffix(m.AppPath(), "/"); path != "" && !strings.HasSuffix(origin, path) {
+			origin += path
+		}
+	}
+	return a.SignInURL(origin)
+}
+
+// replacedOwnerEnv names the variables the owner set in the override file
+// whose value differs from what sign-in sets: sign-in's value wins while
+// it is on (S404). Values equal to what an earlier apply set are not the
+// owner's.
+func replacedOwnerEnv(in Inputs, m catalog.Manifest, adapter Adapter, p Plan) []string {
+	if len(in.OwnerEnv) == 0 {
+		return nil
+	}
+	settings := Settings{Issuer: p.Issuer, ClientID: p.ClientID, Groups: groupNames(m.Name)}
+	want := wiring(m, adapter, p.Issuer, settings).Env
+	var earlier map[string]string
+	if in.Applied != nil {
+		old := settings
+		old.Issuer = in.Applied.Issuer
+		earlier = wiring(m, adapter, old.Issuer, old).Env
+	}
+	var keys []string
+	for k := range want {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []string
+	for _, k := range keys {
+		cur, ok := in.OwnerEnv[k]
+		if !ok || cur == want[k] || cur == earlier[k] {
+			continue
+		}
+		out = append(out, fmt.Sprintf("%s set by the owner is replaced while sign-in is on.", k))
+	}
+	return out
 }

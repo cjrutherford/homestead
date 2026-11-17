@@ -22,6 +22,7 @@ import (
 	"homestead/internal/craftfiles"
 	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/purge"
 	"homestead/internal/router"
 	"homestead/internal/secret"
 	"homestead/internal/sso"
@@ -43,6 +44,8 @@ type SSOConfig struct {
 	YAMLPath   string
 	Port       int
 	Now        func() time.Time
+	// Purge ends a removed person's Everything sharing (S427).
+	Purge *purge.Service
 }
 
 // authentikPackage is the catalog package that provides the identity

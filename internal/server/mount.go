@@ -37,6 +37,9 @@ type AppConfig struct {
 	Port int
 	// Dashboard serves the static UI catch-all; nil leaves it unmounted.
 	Dashboard http.Handler
+	// Guide serves the built owner guide at /guide/ (S494); nil leaves the
+	// route off (plain builds without the embedded guide).
+	Guide http.Handler
 	// CraftLimits are the craft file proxy limits (S254); zero values
 	// take the defaults (512 MiB upload, 30 minute timeout, 8 per session).
 	CraftLimits craftfiles.Limits
@@ -75,7 +78,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	if err != nil {
 		return nil, err
 	}
-	srv.MountConfigIO(c.ConfigPath, secrets)
+	srv.MountConfigIO(c.ConfigPath, secrets, audit.New(st), configSvc.ValidateSettings)
 	srv.MountSecrets(st, secrets)
 	srv.MountClaim(claimSvc)
 	srv.MountAuth(authSvc, audit.New(st))
@@ -103,6 +106,8 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountBackupRecipients(st, secrets, filepath.Join(filepath.Dir(c.ConfigPath), "backup-recipients.yaml"))
 	sched := NewSchedulerWith(st, c.CatalogDir, secrets, issuing)
 	sched.Register("localtls", localTLSSource(local, sched.Now))
+	purger := NewEverythingPurger(st, c.CatalogDir, sched.Now)
+	sched.Register("everything-purge", everythingPurgeSource(purger, sched.Now))
 	srv.MountScheduler(sched)
 	srv.MountDriftScan(st, sched.Now)
 	srv.MountDrift(st, c.CatalogDir)
@@ -132,10 +137,11 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	srv.MountExposure(st, c.Port)
 	ssoManager := srv.MountSSO(SSOConfig{
 		Store: st, Secrets: secrets, Auth: authSvc, Claim: claimSvc, Local: local,
-		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port,
+		CatalogDir: c.CatalogDir, YAMLPath: ssoYAMLPath(c.ConfigPath), Port: c.Port, Purge: purger,
 	})
 	srv.MountTunnel(st, secrets, c.Port)
 	srv.MountAppPublic(st, secrets, c.CatalogDir)
+	srv.MountReadLinks(st, c.CatalogDir)
 	srv.MountMyApps(st, c.CatalogDir)
 	srv.MountAppSetup(st, c.CatalogDir, local)
 	srv.MountAppMove(st, secrets, c.CatalogDir)
@@ -148,6 +154,7 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 		platformApplyDoctorCheck(st, time.Now),
 		migrationDoctorChecks(st, c.CatalogDir),
 		backupEncryptionDoctorCheck(st),
+		backupRewrapDoctorCheck(st, secrets),
 		localTLSDoctorChecks(local, time.Now),
 		craftFilesDoctorCheck(st, docker.CraftMountPresent, docker.CraftSocketPath),
 		edgeUpstreamDoctorCheck(st, docker.NewClient("").Containers),
@@ -167,6 +174,9 @@ func MountApp(srv *Server, c AppConfig) (*AppServices, error) {
 	})
 	if c.Dashboard != nil {
 		srv.MountDashboard(c.Dashboard)
+	}
+	if c.Guide != nil {
+		srv.MountGuide(c.Guide)
 	}
 	return &AppServices{Claim: claimSvc, Auth: authSvc, Scheduler: sched, DashboardAddress: dashAddr, Names: names, LocalTLS: local}, nil
 }

@@ -3,6 +3,7 @@
 # SQLite carries the database by default (single-user scale); larger
 # deployments graduate to external databases in later slices.
 name: nextcloud
+publish: path  # ADR-061
 version: 35.0.1
 title: Nextcloud
 blurb: Files, calendar, and contacts you host.
@@ -15,6 +16,7 @@ icon: mdi:cloud
 services:
 - name: nextcloud
   image: nextcloud:35.0.1-apache
+  publisher: upstream
   exposes: web
   # The edge route's local names are trusted domains from the first
   # install (S254, S313): <app>.lan and its mDNS name <app>.local. The
@@ -118,3 +120,10 @@ sso:
   oidc:
     adapter: nextcloud-user-oidc
     service: nextcloud
+integrations:
+- kind: identity
+  target: authentik
+  note: Sign in through Authentik; local accounts stay available for recovery.
+- kind: library
+  target: jellyfin
+  note: Mount the same bulk media directory into Nextcloud external storage and Jellyfin.

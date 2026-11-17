@@ -22,6 +22,7 @@ import (
 	"homestead/internal/desired"
 	"homestead/internal/discover"
 	"homestead/internal/docker"
+	"homestead/internal/guide"
 	"homestead/internal/layout"
 	"homestead/internal/mdns"
 	"homestead/internal/operation"
@@ -37,6 +38,14 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "apply-platform" {
 		if err := runApplyPlatform(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "homestead-apply:", err)
+			os.Exit(1)
+		}
+		return
+	}
+	// The installer runs this as root to size Docker's address pools (S463).
+	if len(os.Args) > 1 && os.Args[1] == "docker-pools" {
+		if err := runDockerPools(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "docker-pools:", err)
 			os.Exit(1)
 		}
 		return
@@ -109,6 +118,9 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 	} else {
 		fmt.Fprintln(os.Stderr, "homestead-server: dashboard UI not embedded (make dashboard-embed, build with -tags embeddash)")
 	}
+	if files, ok := guide.Embedded(); ok {
+		app.Guide = guide.New(files)
+	}
 	svcs, err := server.MountApp(srv, app)
 	if err != nil {
 		return err
@@ -179,6 +191,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 		server.RunCraftMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
 			fmt.Fprintln(os.Stderr, "homestead-server: craft apps not moved to their paths yet, will retry:", err)
 		})
+		// Published single-origin apps redirect their LAN names to the
+		// public name (ADR-060); apps installed earlier take it here.
+		server.RunSingleOriginMigration(ctx, st, catalogDir, 5*time.Minute, func(err error) {
+			fmt.Fprintln(os.Stderr, "homestead-server: single-origin redirects not applied yet, will retry:", err)
+		})
 	}()
 	// Bring local leaves in line with the routes once now (S295): a new
 	// `.local` name is then served after an upgrade, not hours later at
@@ -188,6 +205,11 @@ func run(listen, configPath, dataDir, socketPath, craftSocket, dashboardSocket, 
 			fmt.Fprintln(os.Stderr, "homestead-server: local TLS reconcile at start:", err)
 		}
 	}()
+	// Keep the gated-app host block in line with the gates and the edge
+	// network's subnet (S421); nft rules do not survive a reboot.
+	go server.RunGateBlock(ctx, st, 5*time.Minute, func(err error) {
+		fmt.Fprintln(os.Stderr, "homestead-server: gated-app host block:", err)
+	})
 	// Probe the router once now so the Tunnel page opens without the wait.
 	go server.WarmTunnelDiscovery(ctx)
 	if err := srv.Run(ctx); err != nil {

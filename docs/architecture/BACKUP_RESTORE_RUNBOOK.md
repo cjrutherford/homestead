@@ -212,10 +212,11 @@ Do not restore these into a directory that other users can read.
 ## 6. Restore databases
 
 Database exports are in the run next to the trees: `<database>.sql.age`
-(Postgres, plain SQL from `pg_dump`) or `<file>.db.age` (SQLite
-snapshot). Because the live database directory is not in the file copy,
-the restored directory is empty and the database engine starts a fresh
-cluster.
+(a server database: plain SQL from `pg_dump` for Postgres,
+`mariadb-dump` for MariaDB, or `mysqldump` for MySQL) or
+`<file>.db.age` (SQLite snapshot). Because the live database directory
+is not in the file copy, the restored directory is empty and the
+database engine starts a fresh cluster.
 
 ### Postgres
 
@@ -249,6 +250,37 @@ age -d -i "$IDENTITY" -o "$WORK/dump.sql" "$ARTIFACT"
 docker exec -i "$DBCONTAINER" psql -U "$DBUSER" -d "$DBNAME" -v ON_ERROR_STOP=1 < "$WORK/dump.sql"
 rm -rf "$WORK"
 ```
+
+### MariaDB and MySQL
+
+The dump is plain SQL, named `<database>.sql.age`. Both clients write
+`DROP TABLE IF EXISTS` before each table, so the load below replaces the
+tables the dump holds and leaves alone anything created after the run.
+If the database must hold exactly the run's contents, drop and recreate
+it first (the app user's `ALL` grant on its own database allows this).
+
+1. Start only the database service, so it initializes an empty cluster
+   from the restored secret and creates the application user again:
+
+```sh runbook mariadb-up
+docker compose --project-directory "$STACK" --project-name "$PACKAGE" up -d "$DBSERVICE"
+```
+
+2. Load the decrypted dump. `DBCLIENT` is `mariadb` for a MariaDB
+   container and `mysql` for a MySQL one. `DBPASS` is the password in the
+   restored secret file (`$STACK/secrets/<service>_db_password`); it
+   travels in the container environment for this one command, never in
+   the dump or on disk:
+
+```sh runbook mariadb-restore
+WORK=$(mktemp -d)
+age -d -i "$IDENTITY" -o "$WORK/dump.sql" "$ARTIFACT"
+docker exec -i -e MYSQL_PWD="$DBPASS" "$DBCONTAINER" "$DBCLIENT" --user="$DBUSER" --database="$DBNAME" < "$WORK/dump.sql"
+rm -rf "$WORK"
+```
+
+The same variables as Postgres apply (`ARTIFACT`, `DBCONTAINER`,
+`DBUSER`, `DBNAME`), plus `DBPASS` and `DBCLIENT`.
 
 ### SQLite
 

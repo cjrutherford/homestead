@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"filippo.io/age"
+
 	"homestead/internal/audit"
 	"homestead/internal/backup"
 	"homestead/internal/catalog"
@@ -108,23 +110,24 @@ func runningImages(client *docker.Client, r *http.Request, packageName string) (
 	return out, nil
 }
 
-// registryMaxima fetches newer tags per service image with a bounded
-// client, skipping failures service by service: registries sulk,
-// and pins cover silence (S190).
-func registryMaxima(images map[string]string) map[string][]string {
-	client := &http.Client{Timeout: 8 * time.Second}
-	out := map[string][]string{}
+// registryDiscoveries lists tags per service image with a bounded
+// client, skipping failures service by service: registries sulk, and
+// pins cover silence (S190). Docker Hub and GHCR both answer (S343);
+// every other registry records why it could not be asked instead of
+// querying the wrong endpoint.
+func registryDiscoveries(images map[string]string) map[string]update.Discovery {
+	registries := update.RegistryClient{HTTP: &http.Client{Timeout: 8 * time.Second}}
+	out := map[string]update.Discovery{}
 	for service, image := range images {
 		if _, _, local := craft.ParseRef(image); local {
-			continue // locally built (S279): there is no registry to ask
+			// Locally built (S279): there is no registry to ask.
+			out[service] = update.Discovery{
+				Service: service, Registry: update.RegistryLocal,
+				Repository: image, Local: true,
+			}
+			continue
 		}
-		tag := image
-		if index := strings.LastIndex(image, ":"); index >= 0 {
-			tag = image[index+1:]
-		}
-		if tags, err := update.RegistryUpdates(client, update.DockerHubAPI, image, tag); err == nil {
-			out[service] = tags
-		}
+		out[service] = registries.Discover(service, image)
 	}
 	return out
 }
@@ -148,7 +151,7 @@ func planPackage(catalogDir string, client *docker.Client, r *http.Request, name
 	for _, service := range manifest.Services {
 		images[service.Name] = service.Image
 	}
-	plan, err := update.PlanUpdate(manifest, running, registryMaxima(images))
+	plan, err := update.PlanUpdateFromDiscoveries(manifest, running, registryDiscoveries(images))
 	if err != nil {
 		return catalog.Manifest{}, update.UpdatePlan{}, false, err
 	}
@@ -303,6 +306,8 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 	if err != nil {
 		return backup.Job{}, err
 	}
+	// Probe now so a missing or unreadable key fails the request early; the
+	// definition resolves the recipients again under the run gate (S505).
 	recipients, err := backup.RecipientsWithOwner(keys, backup.NewRecipientStore(st))
 	if err != nil {
 		return backup.Job{}, err
@@ -311,6 +316,9 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 		Manifest: manifest, Package: manifest.Name,
 		Sources: sources, DestRoot: dest, Retain: retain, Warnings: warnings,
 		Recipients: recipients,
+		RecipientSource: func() ([]age.Recipient, func(), error) {
+			return backup.AcquireRecipients(keys, backup.NewRecipientStore(st))
+		},
 	}
 	if manifest.Database != nil {
 		job.Container = manifest.Name + "-" + manifest.Database.Service
@@ -326,8 +334,8 @@ func backupJob(st *store.Store, manifest catalog.Manifest, secrets catalog.Secre
 			job.SrcRoot = filepath.Join(source.Mountpoint, source.Path)
 			break
 		}
-		if password == "" && manifest.Database.Kind == catalog.DatabasePostgres {
-			return backup.Job{}, fmt.Errorf("postgres backup needs a database password")
+		if password == "" && manifest.Database.Kind.Server() {
+			return backup.Job{}, fmt.Errorf("%s backup needs a database password", manifest.Database.Kind)
 		}
 	}
 	// S266 secret files live in the stack directory, outside the data
@@ -379,14 +387,14 @@ func stackSecretsSource(packageName string) (backup.Source, bool) {
 func databasePassword(secrets catalog.SecretStore, manifest catalog.Manifest) (string, error) {
 	name := catalog.SecretStoreName(manifest.Name, manifest.Database.PasswordSecret)
 	if secrets == nil {
-		return "", fmt.Errorf("postgres backup needs secret %q but no secret store is available", name)
+		return "", fmt.Errorf("database backup needs secret %q but no secret store is available", name)
 	}
 	value, err := secrets.Get(name)
 	if errors.Is(err, secret.ErrNotFound) || (err == nil && value == "") {
-		return "", fmt.Errorf("postgres backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
+		return "", fmt.Errorf("database backup needs secret %q, which is not in the secret store: register the existing database password (homesteadctl apps secrets register %s %s) or reinstall", name, manifest.Name, manifest.Database.PasswordSecret)
 	}
 	if err != nil {
-		return "", fmt.Errorf("postgres backup cannot read secret %q: %w", name, err)
+		return "", fmt.Errorf("database backup cannot read secret %q: %w", name, err)
 	}
 	return value, nil
 }
@@ -448,6 +456,7 @@ func handleUpdatesApply(st *store.Store, catalogDir string, client *docker.Clien
 				}
 				op, err := jobRunner.Start(ctx, def, "")
 				if err != nil {
+					def.Cleanup()
 					return err
 				}
 				done, err := jobRunner.Wait(ctx, op.ID)

@@ -70,6 +70,8 @@ export class Status implements OnInit {
 
   protected readonly health = signal<Health | null>(null);
   protected readonly identity = signal<Identity | null>(null);
+  /** From GET /version (S485); health and identity carry it too, as a fallback. */
+  protected readonly daemonVersion = signal<string | null>(null);
   protected readonly report = signal<DoctorReport | null>(null);
   protected readonly error = signal<string | null>(null);
   /** The appliance answers but is not claimed: diagnostics need a claim first (S292). */
@@ -118,6 +120,10 @@ export class Status implements OnInit {
     this.api.health().subscribe({
       next: (health) => this.health.set(health),
       error: () => this.unreachable(),
+    });
+    this.api.daemonVersion().subscribe({
+      next: ({ version }) => this.daemonVersion.set(version),
+      error: () => undefined,
     });
     this.api.identity().subscribe({
       next: (identity) => this.identity.set(identity),

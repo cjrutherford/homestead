@@ -53,6 +53,22 @@ describe('AppPublic (S290)', () => {
     fixture.detectChanges();
   }
 
+  it('offers no public address for a never-publish app, and only Remove for a name it holds (S451)', () => {
+    load(status({ available: false, never_publish: true, reason: 'Jellyfin is never published: it stays on your network.' }));
+    expect(text()).toContain('never published');
+    expect(el().querySelector('input[name="public-hostname"]')).toBeNull();
+    expect(button('Review public address')).toBeUndefined();
+  });
+
+  it('shows Remove but no add form when a never-publish app holds a public name (S451)', () => {
+    load(status({ never_publish: true, reason: 'Jellyfin is never published: it stays on your network.',
+      routes: [{ route: 'jellyfin.lan', public: ['jellyfin.example.com'] }] }));
+    expect(text()).toContain('Remove this public name');
+    expect(button('Remove')).toBeDefined();
+    expect(el().querySelector('input[name="public-hostname"]')).toBeNull();
+    expect(button('Review public address')).toBeUndefined();
+  });
+
   it('reads the app afresh after it moves to its path, then offers publishing there (S320)', () => {
     load(status({ available: false, reason: 'Jellyfin goes on the tunnel at /apps/jellyfin/ under the dashboard\'s public name. Move it to /apps/jellyfin/ first.' }));
     expect(text()).toContain('Move it to /apps/jellyfin/ first.');

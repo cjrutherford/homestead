@@ -12,7 +12,7 @@ import (
 
 const appSetupUsage = `usage: homesteadctl apps setup <status|resume|skip> <package> [flags]
   status <package>
-  resume <package> --digest D [--token-file FILE] [--follow]
+  resume <package> --digest D [--token-file FILE] [--reauth-file FILE] [--follow]
   skip <package>`
 
 // runAppsSetup is `apps setup` (S324, ADR-048): the setup approved with
@@ -28,16 +28,17 @@ func runAppsSetup(ctx context.Context, client *apiclient.Client, args []string, 
 	set.SetOutput(stderr)
 	digest := set.String("digest", "", "digest of the stopped step's current plan, from apps setup status (resume only)")
 	tokenFile := set.String("token-file", "", "file holding an Authentik API token, used for this run only (resume only)")
+	reauthFile := set.String("reauth-file", "", "file holding the local password, for a setup that grants app administrators (resume only)")
 	follow := set.Bool("follow", false, "follow the setup operation (resume only)")
 	if strings.HasPrefix(pkg, "-") || set.Parse(args) != nil || set.NArg() > 0 {
 		fmt.Fprintln(stderr, appSetupUsage)
 		return exitUsage
 	}
-	resumeOnly := *digest != "" || *tokenFile != "" || *follow
+	resumeOnly := *digest != "" || *tokenFile != "" || *reauthFile != "" || *follow
 	switch sub {
 	case "status":
 		if resumeOnly {
-			fmt.Fprintln(stderr, "--digest, --token-file and --follow belong to resume")
+			fmt.Fprintln(stderr, "--digest, --token-file, --reauth-file and --follow belong to resume")
 			return exitUsage
 		}
 		setup, err := client.AppSetupStatus(ctx, pkg)
@@ -48,7 +49,7 @@ func runAppsSetup(ctx context.Context, client *apiclient.Client, args []string, 
 		return exitOK
 	case "skip":
 		if resumeOnly {
-			fmt.Fprintln(stderr, "--digest, --token-file and --follow belong to resume")
+			fmt.Fprintln(stderr, "--digest, --token-file, --reauth-file and --follow belong to resume")
 			return exitUsage
 		}
 		setup, err := client.AppSetupSkip(ctx, pkg)
@@ -74,7 +75,17 @@ func runAppsSetup(ctx context.Context, client *apiclient.Client, args []string, 
 		}
 		req.Token = token
 	}
-	id, err := client.AppSetupResume(ctx, pkg, req)
+	var id int64
+	var err error
+	if *reauthFile != "" {
+		password, perr := readSecretFile(*reauthFile)
+		if perr != nil {
+			return fail(stderr, perr)
+		}
+		id, err = client.AppSetupResumeAdmin(ctx, pkg, req, password)
+	} else {
+		id, err = client.AppSetupResume(ctx, pkg, req)
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -137,6 +148,9 @@ func printAppSetup(w io.Writer, s apiclient.AppSetup) {
 	token := ""
 	if r.TokenKept != nil && !*r.TokenKept {
 		token = " --token-file FILE"
+	}
+	if s.AdminGrants {
+		token += " --reauth-file FILE"
 	}
 	fmt.Fprintf(w, "resume: homesteadctl apps setup resume %s --digest %s%s\n", s.App, r.Digest, token)
 	fmt.Fprintf(w, "skip:   homesteadctl apps setup skip %s\n", s.App)

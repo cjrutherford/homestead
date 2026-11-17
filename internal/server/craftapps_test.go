@@ -18,11 +18,12 @@ import (
 )
 
 // craftAppsCatalog copies shipped packages into a temp catalog: two craft
-// apps and one non-craft package.
+// apps, one non-craft package, and the packages its declarations name
+// (the S341 load gates resolve every target against the same catalog).
 func craftAppsCatalog(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	for _, name := range []string{"gridcraft", "pdfcraft", "nextcloud"} {
+	for _, name := range []string{"gridcraft", "pdfcraft", "nextcloud", "jellyfin", "authentik"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "catalog", name+".yaml"))
 		if err != nil {
 			t.Fatal(err)

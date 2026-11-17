@@ -44,6 +44,15 @@ Authentik image tag, 2026.8.x):
   `default-provider-invalidation-flow` (stock flows, only referenced);
 - application **Homestead** (slug `homestead`) bound to the provider.
 
+Group bindings (ADR-043 §2, ADR-050 §3): the application is bound to
+`homestead-owner` and `homestead-people` only once the owner group has a
+member. Before the owner is linked no group is bound at all, because any
+binding would make Authentik refuse the unlinked owner at the **Link**
+step ("Policy binding 'None' returned result 'False'"). Homestead's own
+`(issuer, sub)` and active-person checks still refuse everyone else in
+the meantime. The re-plan after linking (the tunnel setup runs one) adds
+both bindings.
+
 Users, groups, flows, policies and every other application are never touched.
 Apply is idempotent: it finds the provider by name and the application by
 slug, changes only what differs (including a drifted redirect URI or client

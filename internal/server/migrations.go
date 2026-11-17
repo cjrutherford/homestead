@@ -228,7 +228,10 @@ func (h *migrationHandlers) preMigrationBackup(manifest catalog.Manifest, plan c
 		return backup.Job{}, backupAvailability{Destination: dest,
 			Reason: "backup encryption unavailable: " + err.Error()}
 	}
-	return backup.Job{Manifest: manifest, Package: manifest.Name, Sources: sources, DestRoot: dest, Recipients: recipients},
+	return backup.Job{Manifest: manifest, Package: manifest.Name, Sources: sources, DestRoot: dest, Recipients: recipients,
+			RecipientSource: func() ([]age.Recipient, func(), error) {
+				return backup.AcquireRecipients(keys, backup.NewRecipientStore(h.st))
+			}},
 		backupAvailability{Possible: true, Destination: dest}
 }
 
@@ -356,6 +359,7 @@ func (h *migrationHandlers) backupStep(job backup.Job) func(ctx context.Context)
 		}
 		started, err := h.runner.Start(ctx, def, "")
 		if err != nil {
+			def.Cleanup()
 			return err
 		}
 		done, err := h.runner.Wait(ctx, started.ID)

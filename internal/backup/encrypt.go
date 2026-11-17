@@ -68,6 +68,27 @@ type KeyStore interface {
 
 var identityMu sync.Mutex
 
+// runGate keeps a recovery key rotation out of backup runs (S505). A job
+// holds the read side from the moment it resolves its recipients until
+// its operation ends; the rotation takes the write side with TryLock and
+// is refused, never queued, while any run holds it. Otherwise a run that
+// resolved the old key could finish after the rotation retired it.
+var runGate sync.RWMutex
+
+// AcquireRecipients resolves the recipients a run encrypts to and holds
+// the run gate until release is called (idempotent). On error nothing is
+// held. The caller wires release into the operation's Cleanup and calls
+// it on every path that does not start the operation.
+func AcquireRecipients(keys KeyStore, owner *RecipientStore) ([]age.Recipient, func(), error) {
+	runGate.RLock()
+	recipients, err := RecipientsWithOwner(keys, owner)
+	if err != nil {
+		runGate.RUnlock()
+		return nil, nil, err
+	}
+	return recipients, sync.OnceFunc(runGate.RUnlock), nil
+}
+
 // ApplianceIdentity returns the appliance backup identity, generating
 // and storing it on first use.
 func ApplianceIdentity(store KeyStore) (*age.X25519Identity, error) {
@@ -130,13 +151,22 @@ func Recipients(store KeyStore) ([]age.Recipient, error) {
 	return []age.Recipient{identity.Recipient()}, nil
 }
 
-// Identities returns the identities restore decrypts with.
+// Identities returns the identities restore decrypts with: the current
+// appliance identity, then any retired by a rotation (S492).
 func Identities(store KeyStore) ([]age.Identity, error) {
 	identity, err := ApplianceIdentity(store)
 	if err != nil {
 		return nil, err
 	}
-	return []age.Identity{identity}, nil
+	out := []age.Identity{identity}
+	retired, err := RetiredIdentities(store)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range retired {
+		out = append(out, id)
+	}
+	return out, nil
 }
 
 // createEncrypted opens dst (0600, exclusive) and returns a writer

@@ -139,7 +139,7 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 	case p == "/api/v3/core/brands/b1/":
 		w.recovery, _ = body["flow_recovery"].(string)
 		_ = enc.Encode(body)
-	case strings.HasPrefix(p, "/api/v3/stages/") || p == "/api/v3/flows/bindings/":
+	case strings.HasPrefix(p, "/api/v3/stages/") || p == "/api/v3/flows/bindings/" || p == "/api/v3/policies/expression/":
 		if r.Method == http.MethodPost {
 			body["pk"] = "s-" + fmt.Sprint(body["name"])
 			_ = enc.Encode(body)
@@ -180,7 +180,7 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 		}
 		rw.WriteHeader(http.StatusNoContent)
 	case p == "/api/v3/core/users/":
-		res(map[string]any{"pk": 7, "uid": w.sub, "type": "internal"})
+		res(map[string]any{"pk": 7, "uid": w.sub, "type": "internal", "is_active": true})
 	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
 		var out []any
 		for _, b := range w.bindings {
@@ -190,6 +190,9 @@ func (w *ssoWorld) admin(rw http.ResponseWriter, r *http.Request, enc *json.Enco
 			out = append(out, b)
 		}
 		res(out...)
+	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodPost && body["policy"] != nil:
+		rw.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case p == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
 		w.bindings = append(w.bindings, body)
 		rw.WriteHeader(http.StatusCreated)
@@ -416,7 +419,9 @@ func (a *ssoApp) ssoSession(t *testing.T) (token, csrf string) {
 
 func cookieAuth(token, csrf string) func(*http.Request) {
 	return func(r *http.Request) {
+		// Both names: the daemon reads only the one that fits the scheme (S470).
 		r.AddCookie(&http.Cookie{Name: "homestead_session", Value: token})
+		r.AddCookie(&http.Cookie{Name: "__Host-homestead_session", Value: token})
 		if csrf != "" {
 			r.Header.Set(CSRFHeader, csrf)
 		}
@@ -542,6 +547,7 @@ func TestSSOStepUpForOIDCSessions(t *testing.T) {
 		{"POST", "/api/v1/sso/link", "", false},
 		{"POST", "/api/v1/secrets/rekey", `{}`, false},
 		{"POST", "/api/v1/backups/identity/export", `{}`, false},
+		{"POST", "/api/v1/backups/identity/rotate", `{}`, false},
 		{"POST", "/api/v1/catalog/nextcloud/secrets/admin_password/reveal", `{"confirm":true}`, false},
 		{"PUT", "/api/v1/people/1/apps/immich/admin", `{"confirm":true}`, false},
 		{"POST", "/api/v1/people/1/password-reset", `{"confirm":true}`, false},
@@ -594,9 +600,12 @@ func TestSSOStepUpListIsExactAndClassified(t *testing.T) {
 		"POST /api/v1/sso/link": stepUpHandler, "DELETE /api/v1/sso/link": stepUpHandler,
 		"POST /api/v1/sso/plan": stepUpBoundary, "POST /api/v1/sso/approve": stepUpBoundary,
 		"POST /api/v1/sso/apply": stepUpBoundary, "DELETE /api/v1/sso": stepUpBoundary,
-		"POST /api/v1/secrets/rekey": stepUpBoundary, "POST /api/v1/backups/identity/export": stepUpBoundary,
+		"POST /api/v1/secrets/rekey": stepUpBoundary, "POST /api/v1/config/import": stepUpBoundary, "POST /api/v1/backups/identity/export": stepUpBoundary,
+		"POST /api/v1/backups/identity/rotate":                stepUpBoundary,
 		"POST /api/v1/catalog/{name}/secrets/{secret}/reveal": stepUpBoundary,
 		"PUT /api/v1/people/{id}/apps/{app}/admin":            stepUpBoundary,
+		"POST /api/v1/catalog/{name}/install-admin":           stepUpBoundary,
+		"POST /api/v1/catalog/{name}/setup/resume-admin":      stepUpBoundary,
 		"POST /api/v1/people/{id}/password-reset":             stepUpBoundary,
 		"POST /api/v1/people/{id}/mfa-reset":                  stepUpBoundary,
 		"POST /api/v1/people/{id}/remove":                     stepUpBoundary,

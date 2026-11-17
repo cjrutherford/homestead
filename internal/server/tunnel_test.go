@@ -175,7 +175,7 @@ func (cf *fakeCloudflare) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "ssl" && parts[3] == "certificate_packs":
-		ok([]any{map[string]any{"status": "active", "hosts": cf.certHosts}})
+		ok([]any{map[string]any{"id": "pack1", "status": "active", "hosts": cf.certHosts}})
 	case len(parts) == 4 && parts[0] == "zones" && parts[2] == "acm" && parts[3] == "total_tls":
 		ok(map[string]any{"enabled": cf.totalTLS})
 	case r.Method == http.MethodGet && r.URL.Path == "/zones":
@@ -795,9 +795,17 @@ func TestTunnelAdopt(t *testing.T) {
 		string(token) != "TUNNEL_TOKEN=adopted-run-token\n" {
 		t.Fatalf("config = %s token = %s", config, token)
 	}
+	// The audit entry is written by a goroutine that waits for the
+	// operation, so it can land just after the operation reads as done.
 	var audited int
-	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.adopt'`).Scan(&audited); err != nil || audited != 1 {
-		t.Fatalf("adopt audit = %d, %v", audited, err)
+	var auditErr error
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if auditErr = st.DB().QueryRow(`SELECT COUNT(*) FROM audit_entries WHERE action = 'tunnel.adopt'`).Scan(&audited); auditErr != nil || audited != 0 {
+			break
+		}
+	}
+	if auditErr != nil || audited != 1 {
+		t.Fatalf("adopt audit = %d, %v", audited, auditErr)
 	}
 	// One tunnel at a time: a second adoption is refused.
 	refused("already manages a tunnel")

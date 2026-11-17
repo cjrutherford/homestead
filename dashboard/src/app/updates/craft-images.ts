@@ -37,6 +37,7 @@ export class CraftImagesPanel implements OnInit {
   protected readonly olderRefused = signal(false);
 
   protected app = '';
+  protected version = '';
   protected manifest = '';
   protected signature = '';
   protected artifact = '';
@@ -62,6 +63,7 @@ export class CraftImagesPanel implements OnInit {
   private request() {
     return {
       app: this.app,
+      version: this.version || undefined,
       manifest: this.manifest || undefined,
       signature: this.signature || undefined,
       artifact: this.artifact || undefined,

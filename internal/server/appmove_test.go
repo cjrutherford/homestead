@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -33,11 +34,17 @@ type appMoveView struct {
 // moveRig is appPublicRig with the move mounted and its stack seams
 // recorded: configuration changes, stops and seed writes.
 func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
+	srv, st, steps, trusted, _ := moveRigCF(t)
+	return srv, st, steps, trusted
+}
+
+// moveRigCF is moveRig with the fake Cloudflare the public rig runs.
+func moveRigCF(t *testing.T) (*Server, *store.Store, *[]string, *[][]string, *fakeCloudflare) {
 	t.Helper()
-	srv, st, _, _ := appPublicRig(t)
-	srv.MountAppMove(st, nil, filepath.Join("..", "..", "catalog"))
+	srv, st, cf, _ := appPublicRig(t)
+	srv.MountAppMove(st, srv.appPublic.secrets, filepath.Join("..", "..", "catalog"))
 	steps := &[]string{}
-	prevConf, prevStop, prevSeeds, prevApply := moveConfigure, moveStop, moveSeeds, moveApplySeed
+	prevConf, prevStop, prevStart, prevSeeds, prevApply := moveConfigure, moveStop, moveStart, moveSeeds, moveApplySeed
 	moveConfigure = func(plan catalog.ConfigPlan, dir, project string, _ *store.Store, _ catalog.SecretStore) (operation.Definition, error) {
 		return operation.Definition{Type: "catalog.configure", Steps: []operation.StepDef{{Name: "write-config", Run: func(context.Context) error {
 			for _, c := range plan.Changes {
@@ -53,6 +60,10 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		*steps = append(*steps, "stop "+project)
 		return nil
 	}
+	moveStart = func(_ context.Context, _, project string) error {
+		*steps = append(*steps, "up "+project)
+		return nil
+	}
 	moveSeeds = func(m catalog.Manifest, dir string) ([]catalog.MoveSeed, error) {
 		return []catalog.MoveSeed{{Service: "jellyfin", Target: "/config/config/network.xml", Source: filepath.Join(dir, "network.xml"),
 			Elements: map[string]string{"BaseUrl": "/apps/jellyfin"}}}, nil
@@ -61,7 +72,9 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		*steps = append(*steps, "seed "+seed.Elements["BaseUrl"])
 		return nil
 	}
-	t.Cleanup(func() { moveConfigure, moveStop, moveSeeds, moveApplySeed = prevConf, prevStop, prevSeeds, prevApply })
+	t.Cleanup(func() {
+		moveConfigure, moveStop, moveStart, moveSeeds, moveApplySeed = prevConf, prevStop, prevStart, prevSeeds, prevApply
+	})
 	trusted := &[][]string{}
 	prevTrust := trustAppHosts
 	trustAppHosts = func(_ context.Context, m catalog.Manifest, address string, add, remove []string) error {
@@ -69,7 +82,14 @@ func moveRig(t *testing.T) (*Server, *store.Store, *[]string, *[][]string) {
 		return nil
 	}
 	t.Cleanup(func() { trustAppHosts = prevTrust })
-	return srv, st, steps, trusted
+	prevProbe, prevTries, prevWait := movePathProbe, movePathProbeTries, movePathProbeWait
+	movePathProbe = func(_ context.Context, url string) error {
+		*steps = append(*steps, "probe "+url)
+		return nil
+	}
+	movePathProbeTries, movePathProbeWait = 2, 0
+	t.Cleanup(func() { movePathProbe, movePathProbeTries, movePathProbeWait = prevProbe, prevTries, prevWait })
+	return srv, st, steps, trusted, cf
 }
 
 func moveStatus(t *testing.T, srv *Server, app string) appMoveView {
@@ -211,7 +231,7 @@ func TestAppMoveRefusals(t *testing.T) {
 	if err := saveEdgeRoutes(st, set); err != nil {
 		t.Fatal(err)
 	}
-	if s := moveStatus(t, srv, "jellyfin"); s.Offered || !strings.Contains(s.Reason, "public name off first") {
+	if s := moveStatus(t, srv, "jellyfin"); s.Offered || !strings.Contains(s.Reason, "the dashboard has none") {
 		t.Fatalf("jellyfin = %+v", s)
 	}
 	if rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/jellyfin/move/plan", nil); rec.Code != http.StatusUnprocessableEntity {
@@ -278,5 +298,115 @@ func TestAppMoveCraftApp(t *testing.T) {
 	r := movedRoute(t, st, "cadcraft.lan")
 	if r.Path != "/apps/cadcraft/" || !r.StripPrefix || r.CraftApp != "cadcraft" {
 		t.Fatalf("route = %+v", r)
+	}
+}
+
+// S395: moving Authentik to the dashboard's path keeps it published on
+// the dashboard's tunnel when a fresh tunnel plan would publish it, so
+// public sign-in and recovery links keep answering.
+func authentikMoveRig(t *testing.T, tunneled, linked bool) (*Server, *store.Store) {
+	t.Helper()
+	srv, st, _, _ := moveRig(t)
+	set, _ := loadEdgeRoutes(st)
+	for i := range set.Routes {
+		switch {
+		case set.Routes[i].Host == "authentik.lan":
+			set.Routes[i].Tunnel = nil
+		case set.Routes[i].Dashboard && tunneled:
+			set.Routes[i].Tunnel = []docker.Hostname{"homestead.example.com"}
+		}
+	}
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	installApp(t, st, "authentik", docker.Route{Host: "auth.lan", Target: docker.Target{Host: "server", Port: 9000},
+		Exposure: docker.ExposureLocal, TLS: docker.TLSInternal})
+	// Only the rig's own Authentik route stays; installApp added the marker.
+	set, _ = loadEdgeRoutes(st)
+	kept := set.Routes[:0]
+	for _, r := range set.Routes {
+		if r.Host != "auth.lan" {
+			kept = append(kept, r)
+		}
+	}
+	set.Routes = kept
+	if err := saveEdgeRoutes(st, set); err != nil {
+		t.Fatal(err)
+	}
+	srv.signInOffered = func() bool { return linked }
+	prev := reconcileEdgeSet
+	reconcileEdgeSet = func(_ context.Context, st *store.Store, set docker.RouteSet) error { return saveEdgeRoutes(st, set) }
+	t.Cleanup(func() { reconcileEdgeSet = prev })
+	return srv, st
+}
+
+func applyAuthentikMove(t *testing.T, srv *Server, st *store.Store) appMoveView {
+	t.Helper()
+	plan := movePlan(t, srv, "authentik")
+	rec := serveRequest(t, srv, http.MethodPost, "/api/v1/catalog/authentik/move/apply", map[string]any{"digest": plan.Digest})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply: %d %s", rec.Code, rec.Body.String())
+	}
+	if op := waitOperation(t, st, rec.Body.Bytes()); op.Status != operation.StatusSucceeded {
+		t.Fatalf("operation = %+v", op)
+	}
+	return plan
+}
+
+func TestAppMoveAuthentikKeepsPublicSignIn(t *testing.T) {
+	srv, st := authentikMoveRig(t, true, true)
+	plan := applyAuthentikMove(t, srv, st)
+	if !strings.Contains(strings.Join(plan.SignIn, " "), "stays published on the tunnel") {
+		t.Fatalf("plan text = %v", plan.SignIn)
+	}
+	set, _ := loadEdgeRoutes(st)
+	var ak docker.Route
+	for _, r := range set.Routes {
+		if r.Host == "authentik.lan" {
+			ak = r
+		}
+	}
+	if ak.Path != "/apps/auth/" || !ak.Published || len(ak.Tunnel) != 0 {
+		t.Fatalf("route = %+v", ak)
+	}
+	dir := t.TempDir()
+	if _, err := docker.ReconcileRoutes(dir, set, docker.RouteSet{}); err != nil {
+		t.Fatal(err)
+	}
+	var dashFile string
+	for _, r := range set.Routes {
+		if r.Dashboard {
+			dashFile = string(docker.RouteFilename(r.Host))
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "routes", dashFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tunnelBlock := string(body)[strings.Index(string(body), "# Tunnel entry"):]
+	if !strings.Contains(tunnelBlock, "handle /apps/auth/*") {
+		t.Fatalf("tunnel block lacks the Authentik handle:\n%s", tunnelBlock)
+	}
+}
+
+func TestAppMoveAuthentikStaysUnpublishedWithoutTunnelOrSignIn(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tunneled, linked bool
+		note             string
+	}{
+		"no tunnel":        {false, true, ""},
+		"sign-in unlinked": {true, false, "sign-in is not linked"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv, st := authentikMoveRig(t, tc.tunneled, tc.linked)
+			plan := applyAuthentikMove(t, srv, st)
+			text := strings.Join(plan.SignIn, " ")
+			if strings.Contains(text, "stays published") || !strings.Contains(text, tc.note) {
+				t.Fatalf("plan text = %v", plan.SignIn)
+			}
+			if r := movedRoute(t, st, "authentik.lan"); r.Path != "/apps/auth/" || r.Published {
+				t.Fatalf("route = %+v", r)
+			}
+		})
 	}
 }

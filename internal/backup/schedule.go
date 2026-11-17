@@ -204,6 +204,11 @@ type Job struct {
 	// Recipients encrypt the run (S259). Empty writes the legacy
 	// plaintext layout, which sensitive sources refuse.
 	Recipients []age.Recipient
+	// RecipientSource, when set, resolves the recipients when the
+	// definition is planned and holds the run gate until the operation
+	// ends (S505, AcquireRecipients); it replaces Recipients. The caller
+	// calls the definition's Cleanup if the operation never starts.
+	RecipientSource func() ([]age.Recipient, func(), error)
 }
 
 // Validate checks job shape: manifest, package, sources, destination,
@@ -232,8 +237,8 @@ func (j Job) Validate() error {
 		if j.Container == "" {
 			return fmt.Errorf("backup: database export needs a container")
 		}
-		if j.Manifest.Database.Kind == catalog.DatabasePostgres && j.Password == "" {
-			return fmt.Errorf("backup: postgres export needs a password")
+		if j.Manifest.Database.Kind.Server() && j.Password == "" {
+			return fmt.Errorf("backup: %s export needs a password", j.Manifest.Database.Kind)
 		}
 		if j.SrcRoot == "" {
 			return fmt.Errorf("backup: database export needs a source root")
@@ -252,7 +257,16 @@ func (j Job) DestDirAbsent() bool {
 // failing fast with offenders named. The manifest lands last, after
 // pruning, so it always describes the retained set.
 func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) {
+	release := func() {}
+	if job.RecipientSource != nil {
+		recipients, rel, err := job.RecipientSource()
+		if err != nil {
+			return operation.Definition{}, err
+		}
+		job.Recipients, release = recipients, rel
+	}
 	if err := job.Validate(); err != nil {
+		release()
 		return operation.Definition{}, err
 	}
 	if now == nil {
@@ -313,6 +327,7 @@ func JobDefinition(job Job, now func() time.Time) (operation.Definition, error) 
 		})
 	}
 	def.Cleanup = func() {
+		defer release()
 		if stamp != "" {
 			cleanupPartial(rootFor())
 		}

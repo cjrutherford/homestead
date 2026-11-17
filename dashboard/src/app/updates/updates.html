@@ -39,6 +39,14 @@
             @for (warning of (row.plan.Warnings ?? []); track warning) {
               <p class="warning">{{ warning }}</p>
             }
+            @for (gap of (row.plan.Provenance ?? []); track gap.Service) {
+              @if (!gap.Discovered && !gap.Local) {
+                <p>
+                  No registry listing for {{ gap.Service }} from {{ gap.Registry }}:
+                  {{ gap.Reason }}
+                </p>
+              }
+            }
             @if (row.plan.Backup) {
               <p>Backup required: {{ row.plan.BackupWhy }}</p>
             }
@@ -57,6 +65,13 @@
                   <input
                     [name]="'craft-manifest-' + row.package"
                     (input)="setCraft(row.package, 'manifest', $any($event.target).value)"
+                  />
+                </label>
+                <label>
+                  Craft signature file (blank: the app list path plus .minisig)
+                  <input
+                    [name]="'craft-signature-' + row.package"
+                    (input)="setCraft(row.package, 'signature', $any($event.target).value)"
                   />
                 </label>
                 <label>

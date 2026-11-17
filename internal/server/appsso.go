@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -32,6 +33,33 @@ type appSignIn struct {
 	audit  func(actor, action, outcome, detail string)
 }
 
+// firstRunOwner is the linked owner's Authentik username for a first run
+// that sets the app up for the owner (FreshRSS, S445; Actual Budget, S447); empty for every
+// other app, and when Authentik or the link is not available.
+func (a *appSignIn) firstRunOwner(ctx context.Context, m catalog.Manifest) string {
+	if a == nil || a.m == nil || m.FirstRun == nil || (m.FirstRun.Routine != catalog.FirstRunFreshRSS && m.FirstRun.Routine != catalog.FirstRunActualBudget) {
+		return ""
+	}
+	status, err := a.m.Status()
+	if err != nil || !status.Offered || status.Subject == "" {
+		return ""
+	}
+	spec, ok, err := a.m.Config()
+	if err != nil || !ok || a.cfg.Secrets == nil {
+		return ""
+	}
+	token, _ := a.cfg.Secrets.Get(sso.APITokenName)
+	if token == "" {
+		return ""
+	}
+	api := &sso.API{Base: spec.AuthentikURL, Token: token, Client: a.client}
+	u, err := api.OwnerUser(ctx, status.Subject)
+	if err != nil || u == nil {
+		return ""
+	}
+	return u.Username
+}
+
 // inputs gathers the appliance state a plan is built from.
 func (a *appSignIn) inputs(name string) (appsso.Inputs, error) {
 	entries, err := catalog.Load(a.cfg.CatalogDir)
@@ -42,28 +70,45 @@ func (a *appSignIn) inputs(name string) (appsso.Inputs, error) {
 	if err != nil {
 		return appsso.Inputs{}, errUnknownApp
 	}
-	return appSignInInputs(a.cfg.Store, a.m, manifest)
+	return appSignInInputs(a.cfg.Store, a.m, manifest, a.cfg.CatalogDir)
 }
 
 var errUnknownApp = errors.New("unknown app")
 
-func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest) (appsso.Inputs, error) {
+func appSignInInputs(st *store.Store, m *sso.Manager, manifest catalog.Manifest, catalogDir string) (appsso.Inputs, error) {
 	set, err := loadEdgeRoutes(st)
 	if err != nil {
 		return appsso.Inputs{Manifest: manifest}, err
 	}
-	return appSignInInputsFrom(st, m, manifest, set)
+	return appSignInInputsFrom(st, m, manifest, set, catalogDir)
 }
 
 // appSignInInputsFrom is appSignInInputs over the edge table set: the
 // current one, or the one a tunnel plan leads to (ADR-048 §6).
-func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manifest, set docker.RouteSet) (appsso.Inputs, error) {
+func appSignInInputsFrom(st *store.Store, m *sso.Manager, manifest catalog.Manifest, set docker.RouteSet, catalogDir string) (appsso.Inputs, error) {
 	in := appsso.Inputs{Manifest: manifest, AuthentikInstalled: authentikInstalled(st)}
 	installed, err := catalog.Installed(st, manifest.Name, stackDirFor(manifest.Name))
 	if err != nil {
 		return in, err
 	}
 	in.Installed = installed
+	if installed && manifest.SSO.OIDC != nil && manifest.SSO.OIDC.Env != nil {
+		names := append([]string{manifest.SSO.OIDC.Env.Secret}, manifest.SSO.OIDC.Env.ExtraSecrets...)
+		if f := manifest.SSO.OIDC.Env.SecretFile; f != nil {
+			names = append(names, f.Secret)
+		}
+		for _, name := range names {
+			in.StackNeedsSecret = in.StackNeedsSecret || !catalog.SecretConsumerWired(stackDirFor(manifest.Name), manifest, name)
+		}
+	}
+	if installed && manifest.SSO.OIDC != nil {
+		if env, err := catalog.OverrideEnv(stackDirFor(manifest.Name), manifest.SSO.OIDC.Service); err == nil {
+			in.OwnerEnv = env
+		}
+	}
+	if err := addForwardInputs(st, &in, manifest, set.Routes, catalogDir); err != nil {
+		return in, err
+	}
 	status, err := m.Status()
 	if err != nil {
 		return in, err
@@ -208,6 +253,11 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 	if err != nil {
 		return 0, err
 	}
+	return a.startWithInputs(ctx, in, enabled, digest, token, actor)
+}
+
+// startWithInputs rebuilds the approved plan from authoritative inputs before starting any operation.
+func (a *appSignIn) startWithInputs(ctx context.Context, in appsso.Inputs, enabled bool, digest, token, actor string) (int64, error) {
 	plan, err := appsso.BuildPlan(in, enabled)
 	if err != nil {
 		return 0, err
@@ -229,7 +279,7 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 		dashboard.AuthentikURL = strings.SplitN(in.Applied.Issuer, "/application/", 2)[0]
 	}
 	rt := appsso.Runtime{
-		Records: appsso.Records{DB: a.cfg.Store.DB()}, Secrets: a.cfg.Secrets, Audit: a.audit,
+		Records: appsso.Records{DB: a.cfg.Store.DB()}, Secrets: a.cfg.Secrets, AppSecrets: a.cfg.Secrets, Audit: a.audit,
 		StackDir: stackDirFor,
 		RootPEM: func() ([]byte, error) {
 			if a.cfg.Local == nil {
@@ -239,8 +289,15 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 		},
 		Fingerprint: func(pkg, dir string) error { return catalog.RecordFingerprints(a.cfg.Store, pkg, dir) },
 		FirstRun: func(ctx context.Context, m catalog.Manifest) error {
-			_, err := firstrun.Run(ctx, m, a.cfg.Secrets)
+			_, err := firstrun.RunAs(ctx, m, a.cfg.Secrets, a.firstRunOwner(ctx, m))
 			return err
+		},
+		SetGate: a.setGate,
+		RestoreAccess: func(ctx context.Context, app string) (int, error) {
+			if a.s.people == nil {
+				return 0, nil
+			}
+			return a.s.people.RestoreApp(ctx, app)
 		},
 	}
 	api := &sso.API{Base: dashboard.AuthentikURL, Token: token, Client: a.client}
@@ -254,6 +311,61 @@ func (a *appSignIn) start(ctx context.Context, name string, enabled bool, digest
 	}
 	a.s.auditOperation(a.cfg.Store, a.runner, op.ID, actor, "app.sign-in.operation", fmt.Sprintf("%s: operation %d", in.Manifest.Name, op.ID))
 	return op.ID, nil
+}
+
+// setupInputs constructs the anticipated public route only in a copied table.
+// The selected route must still be the reviewed local route belonging to the app.
+func (a *appSignIn) setupInputs(rec setupRecord) (appsso.Inputs, error) {
+	if rec.Public == nil || strings.TrimSpace(rec.Public.Route) == "" || strings.TrimSpace(rec.Public.Hostname) == "" {
+		return appsso.Inputs{}, errPlanChanged
+	}
+	entries, err := catalog.Load(a.cfg.CatalogDir)
+	if err != nil {
+		return appsso.Inputs{}, fmt.Errorf("catalog unavailable: %w", err)
+	}
+	manifest, err := entries.Get(rec.App)
+	if err != nil {
+		return appsso.Inputs{}, errUnknownApp
+	}
+	set, err := loadEdgeRoutes(a.cfg.Store)
+	if err != nil {
+		return appsso.Inputs{}, err
+	}
+	routes := append([]docker.Route(nil), set.Routes...)
+	selected := -1
+	for _, reviewed := range rec.Routes {
+		if !strings.EqualFold(string(reviewed.Host), rec.Public.Route) {
+			continue
+		}
+		for i, current := range routes {
+			if strings.EqualFold(string(current.Host), rec.Public.Route) && reflect.DeepEqual(current, reviewed) {
+				selected = i
+				break
+			}
+		}
+	}
+	if selected < 0 || len(appsso.AppRoutes(manifest, []docker.Route{routes[selected]})) != 1 {
+		return appsso.Inputs{}, errPlanChanged
+	}
+	r := routes[selected]
+	if r.IsPath() {
+		r.Published = true
+	} else {
+		r.Tunnel = append(append([]docker.Hostname(nil), r.Tunnel...), docker.Hostname(strings.ToLower(strings.TrimSpace(rec.Public.Hostname))))
+	}
+	routes[selected] = r
+	set.Routes = routes
+	return appSignInInputsFrom(a.cfg.Store, a.m, manifest, set, a.cfg.CatalogDir)
+}
+
+// startSetup applies an approved sign-in plan against the anticipated route;
+// it does not save, reconcile, or publish that route.
+func (a *appSignIn) startSetup(ctx context.Context, rec setupRecord, digest, token, actor string) (int64, error) {
+	in, err := a.setupInputs(rec)
+	if err != nil {
+		return 0, err
+	}
+	return a.startWithInputs(ctx, in, true, digest, token, actor)
 }
 
 // access reads back the app's groups, the owner's membership, the
@@ -333,10 +445,16 @@ type signInPreview struct {
 // the install (S313) is on the first of them, as the wizard publishes it
 // before sign-in.
 func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPlan, public string) *signInPreview {
-	if manifest.SSO.OIDC == nil {
+	if manifest.SSO.OIDC == nil && manifest.SSO.ForwardAuth == nil {
 		return nil
 	}
-	in, err := appSignInInputs(a.cfg.Store, a.m, manifest)
+	if accountlessInstallApps[manifest.Name] {
+		// A craft app installs open on the LAN (ADR-045); its Authentik
+		// gate belongs to its public path and is planned once it is
+		// published (ADR-062 section 6), not with the install.
+		return nil
+	}
+	in, err := appSignInInputs(a.cfg.Store, a.m, manifest, a.cfg.CatalogDir)
 	if err != nil {
 		return &signInPreview{Reason: "The sign-in state could not be read."}
 	}
@@ -369,6 +487,15 @@ func (a *appSignIn) preview(manifest catalog.Manifest, install catalog.InstallPl
 		}
 	}
 	in.Installed, in.Routes = true, docker.ServedRoutes(table, appsso.AppRoutes(manifest, table))
+	if manifest.SSO.ForwardAuth != nil {
+		// A gated app is planned before it exists (S450, ADR-059): the
+		// edge, host block and people are read now, and its accounts are
+		// the administrator its first run creates.
+		if err := addForwardInputs(a.cfg.Store, &in, manifest, table, a.cfg.CatalogDir); err != nil {
+			return &signInPreview{Reason: "The sign-in state could not be read."}
+		}
+		in.Accounts, in.AccountsFn = anticipatedAccounts(manifest), nil
+	}
 	if ok, reason := in.Offered(); !ok {
 		return &signInPreview{Reason: reason}
 	}

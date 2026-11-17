@@ -108,3 +108,17 @@ corrects §3:
 - the login page tells people to ask the owner to reset their password
   (S336);
 - outbound email remains out of scope.
+
+## Amendment (2026-11-08, S466)
+Authentik 2026.8 offers a "Forgot password?" link on the sign-in page
+whenever the default brand has a recovery flow, so the statement above
+that the brand's flow adds no link no longer holds. The brand's flow
+cannot be unset (one-time links need it), so Homestead makes the link
+harmless instead:
+- the recovery flow carries an expression policy, `homestead-recovery-owner-links-only`,
+  that allows only a restored plan (a one-time link) or the plan the
+  administrator's link-making API call starts (a pending user), and
+  otherwise denies with "Ask the owner of this Homestead to reset your
+  password.";
+- the sign-in plan applies and corrects the policy idempotently and leaves a
+  recovery flow the owner set themselves alone.

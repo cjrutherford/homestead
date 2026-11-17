@@ -44,20 +44,30 @@ type fakeAuthentik struct {
 	named         map[string]map[string]any // path+name -> stage or prompt
 	flowBindings  []map[string]any
 	recoveryPosts int
+	// owner-links-only policy (S466): expression policies by name.
+	policies      map[string]map[string]any
+	policyPatches int
+	policyBinds   []map[string]any
 	brandPatches  int
 	// login hint state (S336): the default authentication flow's title.
 	authTitle   string
 	noAuthFlow  bool
 	titlePatchs int
+	// proxy state (S418): the proxy provider and the embedded outpost.
+	proxy     map[string]any
+	outpost   map[string]any
+	noOutpost bool
 }
 
 func newFakeAuthentik(t *testing.T) *fakeAuthentik {
 	f := &fakeAuthentik{version: "2026.8.3", nextPK: 41, groups: map[string]map[string]any{}, mappings: map[string]map[string]any{},
 		authTitle: "Welcome to authentik!", flows: map[string]map[string]any{}, named: map[string]map[string]any{},
 		users: []map[string]any{
-			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal"},
-			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal"},
+			{"pk": 7, "uid": "user-1", "username": "owner", "type": "internal", "is_active": true},
+			{"pk": 8, "uid": "user-2", "username": "guest", "type": "internal", "is_active": true},
 		}}
+	f.outpost = map[string]any{"pk": "op-1", "name": "authentik Embedded Outpost", "providers": []any{float64(5)},
+		"config": map[string]any{"authentik_host": "", "log_level": "info"}}
 	f.groups["outsider"] = map[string]any{"pk": "g-outsider", "name": "outsider", "users": []any{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -95,6 +105,7 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v3/flows/instances/" && r.Method == http.MethodPost:
 		slug := body["slug"].(string)
 		body["pk"] = "flow-" + slug
+		body["policybindingmodel_ptr_id"] = "pbm-" + slug
 		f.flows[slug] = body
 		f.recoveryPosts++
 		_ = enc.Encode(body)
@@ -144,6 +155,27 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/v3/flows/bindings/" && r.Method == http.MethodPost:
 		f.flowBindings = append(f.flowBindings, body)
 		f.recoveryPosts++
+		_ = enc.Encode(body)
+	case r.URL.Path == "/api/v3/policies/expression/" && r.Method == http.MethodGet:
+		if o, ok := f.policies[r.URL.Query().Get("name")]; ok {
+			_ = enc.Encode(list(o))
+			return
+		}
+		_ = enc.Encode(list())
+	case r.URL.Path == "/api/v3/policies/expression/" && r.Method == http.MethodPost:
+		if f.policies == nil {
+			f.policies = map[string]map[string]any{}
+		}
+		body["pk"] = "policy-" + body["name"].(string)
+		f.policies[body["name"].(string)] = body
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/policies/expression/") && r.Method == http.MethodPatch:
+		for _, o := range f.policies {
+			if "/api/v3/policies/expression/"+o["pk"].(string)+"/" == r.URL.Path {
+				o["expression"] = body["expression"]
+				f.policyPatches++
+			}
+		}
 		_ = enc.Encode(body)
 	case strings.HasPrefix(r.URL.Path, "/api/v3/stages/") && r.Method == http.MethodGet:
 		if o, ok := f.named[r.URL.Path+r.URL.Query().Get("name")]; ok {
@@ -240,12 +272,16 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
 	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodGet:
 		var out []any
-		for _, b := range f.bindings {
+		for _, b := range append(append([]map[string]any{}, f.bindings...), f.policyBinds...) {
 			if b["target"] == r.URL.Query().Get("target") {
 				out = append(out, b)
 			}
 		}
 		_ = enc.Encode(map[string]any{"results": out, "pagination": map[string]any{"next": 0}})
+	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodPost && body["policy"] != nil:
+		f.policyBinds = append(f.policyBinds, body)
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
 	case r.URL.Path == "/api/v3/policies/bindings/" && r.Method == http.MethodPost:
 		f.posts++
 		body["pk"] = fmt.Sprintf("b-%d", len(f.bindings))
@@ -297,6 +333,40 @@ func (f *fakeAuthentik) serve(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/oauth2/") && r.Method == http.MethodDelete:
 		f.provider = nil
 		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/providers/proxy/" && r.Method == http.MethodGet:
+		if f.proxy != nil && f.proxy["name"] == r.URL.Query().Get("name") {
+			_ = enc.Encode(list(f.proxy))
+			return
+		}
+		_ = enc.Encode(list())
+	case r.URL.Path == "/api/v3/providers/proxy/" && r.Method == http.MethodPost:
+		f.posts++
+		f.nextPK++
+		body["pk"] = f.nextPK
+		f.proxy = body
+		w.WriteHeader(http.StatusCreated)
+		_ = enc.Encode(body)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/proxy/") && r.Method == http.MethodPatch:
+		f.patches++
+		for k, v := range body {
+			f.proxy[k] = v
+		}
+		_ = enc.Encode(f.proxy)
+	case strings.HasPrefix(r.URL.Path, "/api/v3/providers/proxy/") && r.Method == http.MethodDelete:
+		f.proxy = nil
+		w.WriteHeader(http.StatusNoContent)
+	case r.URL.Path == "/api/v3/outposts/instances/" && r.Method == http.MethodGet:
+		if f.noOutpost || r.URL.Query().Get("managed") != "goauthentik.io/outposts/embedded" {
+			_ = enc.Encode(list())
+			return
+		}
+		_ = enc.Encode(list(f.outpost))
+	case strings.HasPrefix(r.URL.Path, "/api/v3/outposts/instances/") && r.Method == http.MethodPatch:
+		f.patches++
+		for k, v := range body {
+			f.outpost[k] = v
+		}
+		_ = enc.Encode(f.outpost)
 	default:
 		http.NotFound(w, r)
 	}
@@ -372,8 +442,8 @@ func TestPlanWithATokenInspectsAndIsIdempotent(t *testing.T) {
 	if err := runDef(t, h); err != nil {
 		t.Fatal(err)
 	}
-	if ak.posts != 5 || ak.patches != 0 {
-		t.Fatalf("first apply: posts=%d patches=%d, want two groups, provider, application, people binding", ak.posts, ak.patches)
+	if ak.posts != 4 || ak.patches != 0 {
+		t.Fatalf("first apply: posts=%d patches=%d, want two groups, provider, application (no binding before a link)", ak.posts, ak.patches)
 	}
 	body, _ := json.Marshal(ak.provider)
 	for _, must := range []string{`"client_type":"confidential"`, `"grant_types":["authorization_code"]`, `"matching_mode":"strict"`, `"signing_key":"key-1"`, `"sub_mode":"hashed_user_id"`,

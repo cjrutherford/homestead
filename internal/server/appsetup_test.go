@@ -5,15 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"homestead/internal/appaccess"
+	"homestead/internal/appsso"
 	"homestead/internal/audit"
 	"homestead/internal/catalog"
+	"homestead/internal/docker"
 	"homestead/internal/operation"
+	"homestead/internal/people"
+	"homestead/internal/sso"
 	"homestead/internal/store"
 )
 
@@ -324,6 +330,40 @@ func TestAppSetupPrepareKeepsApprovedStepsOnly(t *testing.T) {
 	}
 }
 
+func TestAppSetupRejectsPeopleWithoutSignIn(t *testing.T) {
+	f := newSetupFixture(t)
+	m := statelessManifest(t, "statelessapp")
+	if _, err := f.a.prepare(m, catalog.InstallPlan{}, setupApproval{People: []int64{1}}, "owner"); err == nil {
+		t.Fatal("people must not be silently discarded without sign-in")
+	}
+}
+
+func TestAppSetupValidatesAllPeopleBeforeGrants(t *testing.T) {
+	f := newSetupFixture(t)
+	f.srv.people = &people.Service{DB: f.st.DB()}
+	for _, row := range []struct {
+		id    int
+		state string
+	}{{1, "active"}, {2, "disabled"}} {
+		_, err := f.st.DB().Exec(`INSERT INTO people (id, display_name, username, authentik_pk, state, created_by, created_at) VALUES (?, ?, ?, ?, ?, 'owner', '2026-01-01T00:00:00Z')`, row.id, "person", fmt.Sprint(row.id), row.id, row.state)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, ids := range [][]int64{{1, 2}, {1, 99}, {1, 1}, {0}} {
+		if err := f.a.validatePeople(ids); err == nil {
+			t.Fatalf("accepted %v", ids)
+		}
+	}
+	if err := f.a.validatePeople([]int64{1}); err != nil {
+		t.Fatal(err)
+	}
+	rec := setupRecord{App: "statelessapp", People: []int64{1, 2}}
+	if _, err := f.a.startStep(context.Background(), rec, setupPeople, peopleDigest(rec.App, rec.People), ""); err == nil {
+		t.Fatal("disabled person must stop the step before the first grant")
+	}
+}
+
 func TestAppSetupSignInWithoutAKeptTokenIsSkippedWithAReason(t *testing.T) {
 	f := newSetupFixture(t)
 	m := statelessManifest(t, "statelessapp")
@@ -337,5 +377,281 @@ func TestAppSetupSignInWithoutAKeptTokenIsSkippedWithAReason(t *testing.T) {
 	}
 	if r := rec.step(setupSignIn).Reason; !strings.Contains(r, "keeps no Authentik API token") {
 		t.Fatalf("sign-in reason = %q", r)
+	}
+}
+
+func TestManagedPublicationRequiresCompletedSignInAndGrants(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		signIn, people string
+		allowed        bool
+	}{
+		{"waiting", stepWaiting, stepWaiting, false},
+		{"sign-in skipped", stepSkipped, stepDone, false},
+		{"grants failed", stepDone, stepFailed, false},
+		{"complete", stepDone, stepDone, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newSetupFixture(t)
+			rec := setupRecord{App: "statelessapp", Status: setupWaiting, AccessManaged: true, Steps: []setupStep{
+				{Name: setupSignIn, State: tc.signIn}, {Name: setupPeople, State: tc.people}, {Name: setupPublish, State: stepWaiting, Digest: "reviewed"},
+			}}
+			if err := f.a.save(&rec); err != nil {
+				t.Fatal(err)
+			}
+			err := f.a.runStep(context.Background(), rec.App, setupPublish, "")
+			if (err == nil) != tc.allowed {
+				t.Fatalf("runStep error = %v, allowed %v", err, tc.allowed)
+			}
+			if got := len(f.started()); (got == 1) != tc.allowed {
+				t.Fatalf("publication starts = %d, allowed %v", got, tc.allowed)
+			}
+		})
+	}
+}
+
+// A failed security step must stop the setup operation before publication.
+func TestManagedSetupSecurityFailureNeverPublishes(t *testing.T) {
+	for _, failing := range []string{setupSignIn, setupPeople} {
+		t.Run(failing, func(t *testing.T) {
+			f := newSetupFixture(t)
+			f.fail[failing] = errors.New("security step failed")
+			rec := setupRecord{App: "statelessapp", Status: setupWaiting, AccessManaged: true, Steps: []setupStep{
+				{Name: setupAddress, State: stepWaiting, Digest: "address"},
+				{Name: setupSignIn, State: stepWaiting, Digest: "sign-in"},
+				{Name: setupPeople, State: stepWaiting, Digest: "people"},
+				{Name: setupPublish, State: stepWaiting, Digest: "original-public"},
+			}}
+			def := operation.Definition{Type: "app.install", Steps: []operation.StepDef{{Name: "install", Run: func(context.Context) error { return nil }}}}
+			if err := f.a.attach(rec, &def); err != nil {
+				t.Fatal(err)
+			}
+			op, err := f.a.runner.Start(context.Background(), def, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.a.installed(rec.App, op.ID)
+			if _, err := f.a.runner.Wait(context.Background(), op.ID); err != nil {
+				t.Fatal(err)
+			}
+			got := f.waitSetup(t)
+			if got.Status != setupStopped {
+				t.Fatalf("setup status = %s", got.Status)
+			}
+			for _, call := range f.started() {
+				if strings.HasPrefix(call, setupPublish+"=") {
+					t.Fatalf("published after %s failure: %v", failing, f.started())
+				}
+			}
+			if got.step(setupPublish).Digest != "original-public" {
+				t.Fatal("original public approval was replaced")
+			}
+		})
+	}
+}
+
+func TestPreparedManagedPublicSetupPersistsSecurityFirstAndStopsBeforePublishing(t *testing.T) {
+	for _, failing := range []string{setupSignIn, setupPeople} {
+		t.Run(failing, func(t *testing.T) {
+			a := appSignInRig(t)
+			if err := a.srv.appSignIn.cfg.Secrets.SetSystem(sso.APITokenName, ssoToken); err != nil {
+				t.Fatal(err)
+			}
+			a.linkOwner(t)
+			entries, err := catalog.Load(a.srv.appSignIn.cfg.CatalogDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := entries.Get("immich")
+			if err != nil {
+				t.Fatal(err)
+			}
+			set, err := loadEdgeRoutes(a.st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			route := set.Routes[0]
+			plan := catalog.InstallPlan{Package: "immich", Routes: []docker.Route{route}}
+			preview := a.srv.appSignIn.preview(manifest, plan, "immich.example.com")
+			if preview == nil || preview.Plan == nil {
+				t.Fatalf("sign-in preview: %+v", preview)
+			}
+			approval := setupApproval{
+				Public: &setupPublicApproval{Route: string(route.Host), Hostname: "immich.example.com", Digest: "original-public"},
+				SignIn: &setupDigest{Digest: preview.Plan.Digest},
+				Access: &installAccessApproval{Choices: []appaccess.Choice{}},
+			}
+			rec, err := a.srv.appSetup.prepare(manifest, plan, approval, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !rec.AccessManaged || states(rec) != "address:waiting sign-in:waiting people:waiting publish:waiting" || rec.step(setupPublish).Digest != "original-public" {
+				t.Fatalf("prepared = %+v", rec)
+			}
+			setup := a.srv.appSetup
+			if err := setup.save(&rec); err != nil {
+				t.Fatal(err)
+			}
+			stored, ok, err := setup.load(rec.App)
+			if err != nil || !ok || states(stored) != states(rec) || stored.step(setupPublish).Digest != "original-public" {
+				t.Fatalf("stored = %+v, %v, %v", stored, ok, err)
+			}
+			if review := setup.review(context.Background(), stored, setupSignIn); review.Problem != "" || review.Digest != preview.Plan.Digest {
+				t.Fatalf("anticipated sign-in review = %+v", review)
+			}
+			var calls []string
+			setup.startFn = func(_ context.Context, _ setupRecord, name, _, _ string) (int64, error) {
+				calls = append(calls, name)
+				if name == failing {
+					return 0, errors.New("security step failed")
+				}
+				return 0, nil
+			}
+			setup.reviewFn = func(_ context.Context, rec setupRecord, name string) stepReview {
+				return stepReview{Step: name, Digest: rec.step(name).Digest}
+			}
+			if err := setup.begin(context.Background(), rec.App); err != nil {
+				t.Fatal(err)
+			}
+			got, ok, err := setup.load(rec.App)
+			if err != nil || !ok || got.Operation == 0 {
+				t.Fatalf("started = %+v, %v, %v", got, ok, err)
+			}
+			if _, err := setup.runner.Wait(context.Background(), got.Operation); err != nil {
+				t.Fatal(err)
+			}
+			got, _, err = setup.load(rec.App)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, call := range calls {
+				if call == setupPublish {
+					t.Fatalf("published after %s failure: %v", failing, calls)
+				}
+			}
+			if got.Status != setupStopped || got.step(setupPublish).Digest != "original-public" {
+				t.Fatalf("stopped = %+v", got)
+			}
+		})
+	}
+}
+
+func TestPreparedSetupSignInStartSelectsAnticipatedRouteOnlyForManagedPublic(t *testing.T) {
+	a := appSignInRig(t)
+	if err := a.srv.appSignIn.cfg.Secrets.SetSystem(sso.APITokenName, ssoToken); err != nil {
+		t.Fatal(err)
+	}
+	a.linkOwner(t)
+	entries, err := catalog.Load(a.srv.appSignIn.cfg.CatalogDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := entries.Get("immich")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := loadEdgeRoutes(a.st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := set.Routes[0]
+	plan := catalog.InstallPlan{Package: "immich", Routes: []docker.Route{route}}
+	preview := a.srv.appSignIn.preview(manifest, plan, "immich.example.com")
+	if preview == nil || preview.Plan == nil {
+		t.Fatalf("preview: %+v", preview)
+	}
+	base := setupApproval{Public: &setupPublicApproval{Route: string(route.Host), Hostname: "immich.example.com", Digest: "approved-public"}, SignIn: &setupDigest{Digest: preview.Plan.Digest}}
+	managed := base
+	managed.Access = &installAccessApproval{Choices: []appaccess.Choice{}}
+	rec, err := a.srv.appSetup.prepare(manifest, plan, managed, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The authoritative route changed after approval. The managed start must
+	// refuse it before an Authentik operation or public publication starts.
+	changed := route
+	changed.Target.Port++
+	if err := saveEdgeRoutes(a.st, docker.RouteSet{Routes: []docker.Route{changed}}); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := a.srv.appSetup.startStep(context.Background(), rec, setupSignIn, preview.Plan.Digest, ssoToken); !errors.Is(err, errPlanChanged) || id != 0 {
+		t.Fatalf("managed stale route start = %d, %v", id, err)
+	}
+	if err := saveEdgeRoutes(a.st, set); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := a.srv.appSetup.prepare(manifest, plan, base, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.AccessManaged || states(legacy) != "address:waiting publish:waiting sign-in:waiting" || legacy.step(setupPublish).Digest != "approved-public" {
+		t.Fatalf("legacy prepared = %+v", legacy)
+	}
+	if err := a.srv.appSetup.save(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok, err := a.srv.appSetup.load(legacy.App)
+	if err != nil || !ok || states(stored) != states(legacy) {
+		t.Fatalf("legacy stored = %+v, %v, %v", stored, ok, err)
+	}
+	in, err := a.srv.appSignIn.inputs(legacy.App)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordinary, err := appsso.BuildPlan(in, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review := a.srv.appSetup.review(context.Background(), stored, setupSignIn); review.Problem != "" || review.Digest != ordinary.Digest {
+		t.Fatalf("legacy sign-in review = %+v", review)
+	}
+	if id, err := a.srv.appSetup.startStep(context.Background(), stored, setupSignIn, ordinary.Digest, ssoToken); err != nil || id == 0 {
+		t.Fatalf("legacy ordinary start = %d, %v", id, err)
+	}
+}
+
+// S390: resuming a stopped managed setup that would grant an app
+// administrator is itself an administrator grant and needs step-up.
+func stopManagedSetup(t *testing.T, f *setupFixture, choices []appaccess.Choice) {
+	t.Helper()
+	f.fail[setupPublish] = errPlanChanged
+	f.install(t)
+	delete(f.fail, setupPublish)
+	f.a.mu.Lock()
+	defer f.a.mu.Unlock()
+	rec, ok, err := f.a.load("statelessapp")
+	if err != nil || !ok {
+		t.Fatalf("load = %v, %v", ok, err)
+	}
+	rec.AccessManaged, rec.AccessChoices = true, choices
+	if err := f.a.save(&rec); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAppSetupResumeWithAdminChoicesNeedsTheStepUpRoute(t *testing.T) {
+	f := newSetupFixture(t)
+	stopManagedSetup(t, f, []appaccess.Choice{{PersonID: 1, Role: appaccess.Admin}})
+	view, err := f.a.view(context.Background(), "statelessapp")
+	if err != nil || !view.AdminGrants {
+		t.Fatalf("view admin_grants = %v, %v", view.AdminGrants, err)
+	}
+	rec := f.post(t, "/api/v1/catalog/statelessapp/setup/resume", `{"digest":"new-publish"}`)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "administrator") {
+		t.Fatalf("plain resume with admin choices = %d %s, want 403", rec.Code, rec.Body)
+	}
+	if got, _, _ := f.a.current("statelessapp"); got.Status != setupStopped {
+		t.Fatalf("denied resume changed the setup: %s", got.Status)
+	}
+	if rec := f.post(t, "/api/v1/catalog/statelessapp/setup/resume-admin", `{"digest":"new-publish"}`); rec.Code != http.StatusOK {
+		t.Fatalf("resume-admin = %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAppSetupResumeWithoutAdminChoicesIsUnaffected(t *testing.T) {
+	f := newSetupFixture(t)
+	stopManagedSetup(t, f, []appaccess.Choice{{PersonID: 1, Role: appaccess.User}})
+	if rec := f.post(t, "/api/v1/catalog/statelessapp/setup/resume", `{"digest":"new-publish"}`); rec.Code != http.StatusOK {
+		t.Fatalf("plain resume with user choices = %d %s", rec.Code, rec.Body)
 	}
 }

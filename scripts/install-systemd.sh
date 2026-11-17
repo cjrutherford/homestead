@@ -25,6 +25,13 @@ cd "$REPO"
 getent group homestead-craft >/dev/null || groupadd --system homestead-craft
 # Group allowed on the dashboard socket besides root (S289, ADR-035).
 getent group homestead-dashboard >/dev/null || groupadd --system homestead-dashboard
+# The owner guide (S494) is built from docs/guide with the Python standard
+# library and embedded the same way; without python3 the guide route is off.
+if command -v python3 >/dev/null 2>&1; then
+	python3 -I "$REPO/scripts/guide/build.py" || echo "warning: owner guide build failed; /guide/ will be missing" >&2
+else
+	echo "warning: python3 not found; /guide/ will be missing" >&2
+fi
 # A built dashboard (make dashboard-build dashboard-embed) travels inside
 # the binary; without one the daemon stays API-only (S031).
 build_tags=()
@@ -47,6 +54,15 @@ cp -r "$CATALOG_SRC" "$CATALOG_DST"
 mkdir -p "$CATALOG_DST/craft"
 rm -rf "$CATALOG_DST/craft/context"
 cp -r "$REPO/images/craft" "$CATALOG_DST/craft/context"
+# Everything apps (ADR-057) build on the appliance from a bridge build
+# context and pinned source archives that ship in the catalog directory.
+# They are separate from the signed craft context above, so the owner-signed
+# craft manifest is unaffected.
+mkdir -p "$CATALOG_DST/everything"
+rm -rf "$CATALOG_DST/everything/context"
+cp -r "$REPO/images/everything" "$CATALOG_DST/everything/context"
+mkdir -p "$CATALOG_DST/everything/sources"
+cp "$REPO"/third_party/everything/*.tar.gz "$CATALOG_DST/everything/sources/"
 install -m 0644 "$UNIT_SRC" "$UNIT_DST"
 # The privileged apply unit (ADR-027) ships disabled: the daemon starts it
 # on demand when a verified platform update is applied. Only this unit may
@@ -56,6 +72,20 @@ install -m 0644 "$REPO/systemd/homestead-apply.service" /etc/systemd/system/home
 # a tunnel exists (S246). Installing the file needs privilege; enabling
 # stays an explicit setup-time act, never a side effect of install.
 install -m 0644 "$REPO/systemd/homestead-tunnel.service" /etc/systemd/system/homestead-tunnel.service
+# Docker's built-in address pool runs dry at about 31 compose networks, and
+# the catalog has 46 apps (S463). Merge one small-subnet pool into
+# daemon.json (other keys and any pools the owner set stay) and restart
+# Docker only when the file changed; running apps come back by policy.
+if command -v docker >/dev/null && systemctl cat docker.service >/dev/null 2>&1; then
+	pools_result="$("$BIN_DST" docker-pools)" || {
+		echo "warning: could not size docker's address pools (see above); continuing" >&2
+		pools_result=""
+	}
+	if [ "$pools_result" = "changed" ]; then
+		echo "docker: default-address-pools added to /etc/docker/daemon.json; restarting docker"
+		systemctl restart docker.service
+	fi
+fi
 systemctl daemon-reload
 # A running connector picks up a changed unit only when restarted (S300);
 # try-restart leaves a stopped or never-enabled connector alone.

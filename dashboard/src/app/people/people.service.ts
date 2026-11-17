@@ -43,10 +43,22 @@ export interface MyApp {
   icon: string;
   role: 'owner' | 'user' | 'admin';
   url: string;
+  /** Always set: the app on the appliance's own names. */
+  local_url: string;
+  /** Set once the app is published on the tunnel. */
+  public_url?: string;
 }
 
 export interface MyAppsView {
   apps: MyApp[];
+}
+
+export interface PendingPurge {
+  app: string;
+  username: string;
+  since: string;
+  attempts: number;
+  last_error?: string;
 }
 
 export interface PeopleView {
@@ -54,6 +66,10 @@ export interface PeopleView {
   people: Person[] | null;
   unmanaged: UnmanagedUser[] | null;
   apps: string[] | null;
+  /** Apps that can be granted only as App admin (forward-auth, admin-only). */
+  admin_only?: string[] | null;
+  /** Everything sharing not yet purged for a removed person (S427). */
+  purges?: PendingPurge[] | null;
   read_error?: string;
   owner: string;
   /** no-token or no-sign-in when Homestead cannot act. */
@@ -64,7 +80,10 @@ export interface PeopleView {
 /** A credential shown once: a password or a one-time sign-in link. */
 export interface Revealed {
   kind: 'password' | 'link';
+  /** A password, or a link that opens on the local network. */
   value: string;
+  /** The same link on Authentik's public address, when there is one. */
+  public_value?: string;
 }
 
 /** What adding a person returns; sign_in_failed: they were added but how they sign in was not set up. */
@@ -73,6 +92,11 @@ export interface PersonAdded {
   revealed: Revealed | null;
   warning?: string;
   sign_in_failed?: boolean;
+}
+
+/** Non-blocking problems the daemon reports with a change (S507), such as a Nextcloud admin right not dropped. */
+export interface PeopleChanged {
+  warnings?: string[];
 }
 
 export interface PersonAdd {
@@ -131,29 +155,29 @@ export class PeopleService {
     return this.http.post<{ revealed: Revealed | null }>(`/api/v1/people/${id}/password-reset`, { method, password, confirm: true });
   }
 
-  resetSecondFactor(id: number): Observable<{ removed: string[]; skipped: string[] }> {
-    return this.http.post<{ removed: string[]; skipped: string[] }>(`/api/v1/people/${id}/mfa-reset`, { confirm: true });
+  resetSecondFactor(id: number): Observable<{ removed: number; skipped: number }> {
+    return this.http.post<{ removed: number; skipped: number }>(`/api/v1/people/${id}/mfa-reset`, { confirm: true });
   }
 
-  disablePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/disable`, { confirm: true });
+  disablePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/disable`, { confirm: true });
   }
 
-  enablePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/enable`, { confirm: true });
+  enablePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/enable`, { confirm: true });
   }
 
-  removePerson(id: number): Observable<unknown> {
-    return this.http.post(`/api/v1/people/${id}/remove`, { confirm: true });
+  removePerson(id: number): Observable<PeopleChanged> {
+    return this.http.post<PeopleChanged>(`/api/v1/people/${id}/remove`, { confirm: true });
   }
 
-  grantApp(id: number, app: string, admin: boolean): Observable<{ person: Person }> {
+  grantApp(id: number, app: string, admin: boolean): Observable<{ person: Person } & PeopleChanged> {
     const path = `/api/v1/people/${id}/apps/${encodeURIComponent(app)}${admin ? '/admin' : ''}`;
-    return this.http.put<{ person: Person }>(path, { confirm: true });
+    return this.http.put<{ person: Person } & PeopleChanged>(path, { confirm: true });
   }
 
-  revokeApp(id: number, app: string): Observable<{ person: Person }> {
-    return this.http.post<{ person: Person }>(`/api/v1/people/${id}/apps/${encodeURIComponent(app)}/revoke`, { confirm: true });
+  revokeApp(id: number, app: string): Observable<{ person: Person } & PeopleChanged> {
+    return this.http.post<{ person: Person } & PeopleChanged>(`/api/v1/people/${id}/apps/${encodeURIComponent(app)}/revoke`, { confirm: true });
   }
 
   resolveDrift(id: number, action: DriftAction, method: 'link' | 'generated' = 'link'): Observable<{ revealed: Revealed | null }> {

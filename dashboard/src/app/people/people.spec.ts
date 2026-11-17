@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { People } from './people';
+import { ToastService } from '../core/toast.service';
 
 const SAM = { id: 4, display_name: 'Sam Lee', username: 'sam', email: 'sam@example.com', state: 'active', origin: 'created', grants: [{ app: 'immich', role: 'user' }], status: 'ok', drift: null };
 const PAT = {
@@ -48,6 +49,11 @@ describe('People', () => {
     expect(text()).toContain('In Authentik, not managed here');
     expect(text()).toContain('Old One');
     expect(text()).toContain('never Homestead administrators');
+  });
+
+  it('says plainly when a removed person\'s sharing is not purged yet', () => {
+    start({ ...VIEW, purges: [{ app: 'tasks', username: 'gone', since: '2026-11-03T00:00:00Z', attempts: 1 }] });
+    expect(text()).toContain('Sharing for gone in tasks is not removed yet.');
   });
 
   it('adopts an unmanaged account after one click, with confirm', () => {
@@ -167,6 +173,31 @@ describe('People', () => {
     expect(button('Generate a password instead')).toBeUndefined();
   });
 
+  it('shows a one-time link for the local network and one for the internet', () => {
+    start();
+    addSam().flush({
+      person: SAM,
+      revealed: { kind: 'link', value: 'https://homestead.lan/apps/auth/if/flow/r/?flow_token=x', public_value: 'https://home.example.com/apps/auth/if/flow/r/?flow_token=x' },
+    });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('On the local network');
+    expect(text()).toContain('https://homestead.lan/apps/auth/if/flow/r/?flow_token=x');
+    expect(text()).toContain('Over the internet');
+    expect(text()).toContain('https://home.example.com/apps/auth/if/flow/r/?flow_token=x');
+    expect(button('Copy local link')).toBeDefined();
+    expect(button('Copy public link')).toBeDefined();
+  });
+
+  it('says there is no public link yet when Authentik has no public address', () => {
+    start();
+    addSam().flush({ person: SAM, revealed: { kind: 'link', value: 'https://homestead.lan/apps/auth/if/flow/r/?flow_token=x' } });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('There is no public link yet');
+    expect(button('Copy public link')).toBeUndefined();
+  });
+
   it('grants and revokes only what changed, as separate confirmed calls', () => {
     start();
     (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Apps') as HTMLButtonElement).click();
@@ -224,6 +255,21 @@ describe('People', () => {
     http.expectOne('/api/v1/people').flush(VIEW);
   });
 
+  it('recreates a missing person with a generated password shown once', () => {
+    start();
+    expect(button('Recreate with a generated password')).toBeDefined();
+    button('Recreate with a generated password')!.click();
+    const recreate = http.expectOne('/api/v1/people/6/resolve');
+    expect(recreate.request.body).toMatchObject({ action: 'recreate', method: 'generated' });
+    recreate.flush({ revealed: { kind: 'password', value: 'Gen-Pass-Value-1' } });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    fixture.detectChanges();
+    expect(text()).toContain('Gen-Pass-Value-1');
+    button('I have it')!.click();
+    fixture.detectChanges();
+    expect(text()).not.toContain('Gen-Pass-Value-1');
+  });
+
   it('asks before removing and says app data stays', () => {
     start();
     (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
@@ -246,5 +292,16 @@ describe('People', () => {
     http.expectOne('/api/v1/people/4/disable').flush('Authentik could not do that: refused', { status: 502, statusText: 'Bad Gateway' });
     fixture.detectChanges();
     expect(text()).toContain('Authentik could not do that: refused');
+  });
+
+  it('shows the warnings a change returns as notices (S508)', () => {
+    start();
+    (Array.from(el().querySelectorAll('.person[data-status="ok"] button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    (Array.from(el().querySelectorAll('dialog button')).find((b) => b.textContent?.trim() === 'Remove') as HTMLButtonElement).click();
+    http.expectOne('/api/v1/people/4/remove').flush({ ok: true, warnings: ['Nextcloud admin was not dropped (x)'] });
+    http.expectOne('/api/v1/people').flush(VIEW);
+    const notices = TestBed.inject(ToastService).toasts().filter((t) => t.kind === 'notice');
+    expect(notices.map((t) => t.message)).toEqual(['Warning: Nextcloud admin was not dropped (x)']);
   });
 });

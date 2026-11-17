@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -234,17 +235,39 @@ type SignInWiring struct {
 	Env        map[string]string
 }
 
+// WiringNotes reports what ApplySignInWiring did to variables the owner
+// may have set: Kept were left in place on off because their value is
+// not the one sign-in set; Replaced held another value that sign-in's
+// own value now overrides on on.
+type WiringNotes struct {
+	Kept     []string
+	Replaced []string
+}
+
+// OverrideEnv returns the override file's environment for one service,
+// so a plan can see the owner's values before sign-in touches them.
+func OverrideEnv(dir, service string) (map[string]string, error) {
+	document, err := readOverride(filepath.Join(dir, OverrideFileName))
+	if err != nil {
+		return nil, err
+	}
+	return document.Services[service].Environment, nil
+}
+
 // ApplySignInWiring adds the wiring to the override file (on) or takes
 // exactly those entries out again (off), leaving every other entry,
-// including the owner's environment, as it was.
-func ApplySignInWiring(dir string, w SignInWiring, on bool) error {
+// including the owner's environment, as it was. A variable is removed on
+// off only while it still holds the value sign-in set; on on, sign-in's
+// value wins over a different one, and both cases are reported.
+func ApplySignInWiring(dir string, w SignInWiring, on bool) (WiringNotes, error) {
+	var notes WiringNotes
 	if !validServiceName.MatchString(w.Service) {
-		return fmt.Errorf("catalog: invalid service %q", w.Service)
+		return notes, fmt.Errorf("catalog: invalid service %q", w.Service)
 	}
 	path := filepath.Join(dir, OverrideFileName)
 	document, err := readOverride(path)
 	if err != nil {
-		return err
+		return notes, err
 	}
 	entry := document.Services[w.Service]
 	without := func(list, drop []string) []string {
@@ -265,13 +288,27 @@ func ApplySignInWiring(dir string, w SignInWiring, on bool) error {
 	if entry.Environment == nil {
 		entry.Environment = map[string]string{}
 	}
-	for key, value := range w.Env {
+	keys := make([]string, 0, len(w.Env))
+	for key := range w.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := w.Env[key]
 		if !validEnvKey.MatchString(key) {
-			return fmt.Errorf("catalog: invalid variable %q", key)
+			return notes, fmt.Errorf("catalog: invalid variable %q", key)
 		}
-		delete(entry.Environment, key)
-		if on {
+		current, present := entry.Environment[key]
+		switch {
+		case on:
+			if present && current != value {
+				notes.Replaced = append(notes.Replaced, key)
+			}
 			entry.Environment[key] = value
+		case present && current == value:
+			delete(entry.Environment, key)
+		case present:
+			notes.Kept = append(notes.Kept, key)
 		}
 	}
 	if on {
@@ -283,7 +320,7 @@ func ApplySignInWiring(dir string, w SignInWiring, on bool) error {
 	} else {
 		document.Services[w.Service] = entry
 	}
-	return writeOverride(path, document)
+	return notes, writeOverride(path, document)
 }
 
 func writeOverride(path string, document overrideDocument) error {

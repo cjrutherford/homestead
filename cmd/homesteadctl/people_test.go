@@ -39,7 +39,7 @@ func newPeopleStub(t *testing.T, tokenKept bool) *peopleStub {
 				_, _ = w.Write([]byte(`{"token_kept":false,"people":[],"unmanaged":[],"apps":[],"owner":"chris","reason":"no-token","token_words":"It can create people."}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["immich"],"people":[` + person + `,{"id":5,"display_name":"Pat","username":"pat","state":"active","grants":[],"status":"drift","drift":[{"kind":"grant","app":"immich","homestead":"user","authentik":"none"}]}],"unmanaged":[{"username":"old","name":"Old One","active":true}]}`))
+			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["immich"],"people":[` + person + `,{"id":5,"display_name":"Pat","username":"pat","state":"active","grants":[],"status":"drift","drift":[{"kind":"grant","app":"immich","homestead":"user","authentik":"none"}]}],"unmanaged":[{"username":"old","name":"Old One","active":true}],"purges":[{"app":"tasks","username":"gone","attempts":2}]}`))
 		case r.URL.Path == "/api/v1/people" && r.Method == "POST":
 			_, _ = w.Write([]byte(`{"person":` + person + `,"revealed":{"kind":"password","value":"s3cretGenerated"}}`))
 		case strings.HasSuffix(r.URL.Path, "/password-reset") && body["password"] != nil && body["password"] != "":
@@ -47,7 +47,7 @@ func newPeopleStub(t *testing.T, tokenKept bool) *peopleStub {
 		case strings.HasSuffix(r.URL.Path, "/password-reset"):
 			_, _ = w.Write([]byte(`{"revealed":{"kind":"link","value":"https://x/recover/abc"}}`))
 		case strings.HasSuffix(r.URL.Path, "/mfa-reset"):
-			_, _ = w.Write([]byte(`{"removed":["totp"],"skipped":["webauthn"]}`))
+			_, _ = w.Write([]byte(`{"removed":1,"skipped":0}`))
 		case strings.HasSuffix(r.URL.Path, "/resolve"):
 			_, _ = w.Write([]byte(`{"revealed":null}`))
 		case strings.Contains(r.URL.Path, "/apps/") || r.Method == "PATCH" || strings.HasSuffix(r.URL.Path, "/adopt"):
@@ -84,7 +84,7 @@ func TestPeopleListShowsOwnerGrantsDriftAndUnmanaged(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{"chris (owner): every app", "Sam Lee (sam)", "immich", "drift: app immich", "not managed: old", "people adopt old"} {
+	for _, want := range []string{"chris (owner): every app", "Sam Lee (sam)", "immich", "drift: app immich", "not managed: old", "people adopt old", "purge pending: gone in tasks (2 tries)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in %q", want, out)
 		}
@@ -226,5 +226,45 @@ func TestPeopleAddSuggestsAGeneratedPasswordWhenSignInFailed(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "no recovery flow") || !strings.Contains(errOut, "homesteadctl people reset-password cy --generate") {
 		t.Fatalf("err %q", errOut)
+	}
+}
+
+// S461: the daemon answers device counts, so reset-mfa must decode numbers.
+func TestResetMFAReadsDeviceCounts(t *testing.T) {
+	s := newPeopleStub(t, true)
+	code, out, errOut := invoke(t, []string{"--server", s.url, "people", "reset-mfa", "4"})
+	if code != exitOK || !strings.Contains(out, "1 removed") {
+		t.Errorf("exit %d out %q err %q", code, out, errOut)
+	}
+}
+
+func TestPeopleChangesPrintResponseWarningsOnStderr(t *testing.T) {
+	var calls []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		person := `{"id":4,"display_name":"Sam Lee","username":"sam","state":"active","grants":[],"status":"ok"}`
+		if r.Method == "GET" {
+			_, _ = w.Write([]byte(`{"token_kept":true,"owner":"chris","apps":["nextcloud"],"people":[` + person + `]}`))
+			return
+		}
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		_, _ = w.Write([]byte(`{"ok":true,"person":` + person + `,"warnings":["Nextcloud admin was not dropped (x)","second"]}`))
+	}))
+	defer ts.Close()
+	for _, verb := range [][]string{{"grant", "sam", "nextcloud"}, {"revoke", "sam", "nextcloud"}, {"disable", "sam"}, {"enable", "sam"}, {"remove", "sam"}} {
+		code, out, errOut := invoke(t, append([]string{"--server", ts.URL, "people"}, verb...))
+		if code != exitOK {
+			t.Fatalf("%v: exit %d err %q", verb, code, errOut)
+		}
+		if strings.Contains(out, "warning:") {
+			t.Errorf("%v: warning on stdout: %q", verb, out)
+		}
+		want := "warning: Nextcloud admin was not dropped (x)\nwarning: second\n"
+		if !strings.HasSuffix(errOut, want) {
+			t.Errorf("%v: stderr %q, want %q", verb, errOut, want)
+		}
+	}
+	if len(calls) != 5 {
+		t.Errorf("calls %v", calls)
 	}
 }

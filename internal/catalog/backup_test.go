@@ -15,6 +15,12 @@ func TestDatabaseBackupValidation(t *testing.T) {
 	if err := postgres.Validate(services); err != nil {
 		t.Fatalf("postgres: %v", err)
 	}
+	for _, kind := range []DatabaseKind{DatabaseMariaDB, DatabaseMySQL} {
+		decl := DatabaseBackup{Service: "db", Kind: kind, Database: "app", Username: "app", PasswordSecret: "db_password"}
+		if err := decl.Validate(services); err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+	}
 	for _, decl := range []DatabaseBackup{
 		{Service: "ghost", Kind: DatabaseSQLite, Path: "x.db"},
 		{Service: "web", Kind: "mysql", Path: "x.db"},
@@ -23,6 +29,9 @@ func TestDatabaseBackupValidation(t *testing.T) {
 		{Service: "web", Kind: DatabasePostgres, Database: "9bad", Username: "app"},
 		{Service: "web", Kind: DatabasePostgres, Database: "app"},
 		{Service: "web", Kind: DatabasePostgres, Database: "app", Username: "app", Path: "x.db"},
+		{Service: "web", Kind: DatabaseMariaDB, Database: "bad-name", Username: "app"},
+		{Service: "web", Kind: DatabaseMySQL, Database: "app"},
+		{Service: "web", Kind: DatabaseMySQL, Database: "app", Username: "app", Path: "x.db"},
 	} {
 		if err := decl.Validate(services); err == nil {
 			t.Fatalf("accepted %+v", decl)

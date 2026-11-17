@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"homestead/internal/operation"
@@ -465,5 +466,53 @@ func TestNextcloudGeneratesAdminSecretAndEnvironment(t *testing.T) {
 	secretFiles := SecretFilesFor(m)
 	if len(secretFiles) != 1 || secretFiles[0].UID == nil || *secretFiles[0].UID != 33 {
 		t.Fatalf("secret files = %+v", secretFiles)
+	}
+}
+
+// TestLaravelKeyEncodingAndBookStackSecrets (S366): BookStack's APP_KEY
+// must be "base64:" and 32 random bytes; other generated secrets stay hex.
+// The DB password, key and client secret reach the app only as files.
+func TestLaravelKeyEncodingAndBookStackSecrets(t *testing.T) {
+	m, err := repoCatalog(t).Get("bookstack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sec := newMemSecrets(t)
+	if err := EnsureSecrets(sec, m); err != nil {
+		t.Fatal(err)
+	}
+	key := sec.values[SecretStoreName("bookstack", "app_key")]
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(key, "base64:"))
+	if !strings.HasPrefix(key, "base64:") || err != nil || len(raw) != 32 {
+		t.Fatalf("app_key = %q (%v)", key, err)
+	}
+	if len(sec.values[SecretStoreName("bookstack", "db_password")]) != 64 {
+		t.Fatal("db_password is not 64 hex characters")
+	}
+	again := sec.values[SecretStoreName("bookstack", "app_key")]
+	if err := EnsureSecrets(sec, m); err != nil || sec.values[SecretStoreName("bookstack", "app_key")] != again {
+		t.Fatal("app_key regenerated")
+	}
+	files, err := Generate(m, Generation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(files.ComposeYAML, key) || strings.Contains(files.ComposeYAML, "PASSWORD=") {
+		t.Fatalf("a secret value or plaintext password is in compose:\n%s", files.ComposeYAML)
+	}
+	for _, want := range []string{"FILE__APP_KEY", "FILE__DB_PASSWORD", "FILE__OIDC_CLIENT_SECRET", "MARIADB_PASSWORD_FILE"} {
+		if !strings.Contains(files.ComposeYAML, want) {
+			t.Errorf("compose lacks %s", want)
+		}
+	}
+	bad := m
+	bad.Secrets = append([]SecretDecl(nil), m.Secrets...)
+	for i := range bad.Secrets {
+		if bad.Secrets[i].Name == "app_key" {
+			bad.Secrets[i].Encoding = "rot13"
+		}
+	}
+	if err := bad.Validate(); err == nil || !strings.Contains(err.Error(), "encoding") {
+		t.Fatalf("unknown encoding err = %v", err)
 	}
 }
