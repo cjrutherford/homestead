@@ -1,0 +1,42 @@
+#!/bin/sh
+set -eu
+
+root=${HOMESTEAD_TEST_ROOT:-}
+path() {
+	printf '%s%s' "$root" "$1"
+}
+
+ensure_group() {
+	if ! getent group "$1" >/dev/null 2>&1; then
+		groupadd --system "$1"
+	fi
+}
+
+ensure_directory() {
+	mode="$1"
+	target="$(path "$2")"
+	if [ ! -d "$target" ]; then
+		install -d -m "$mode" "$target"
+	fi
+}
+
+case "${1:-}" in
+configure)
+	ensure_group homestead-craft
+	ensure_group homestead-dashboard
+	ensure_directory 0755 /etc/homestead
+	ensure_directory 0700 /var/lib/homestead
+	ensure_directory 0755 /var/log/homestead
+	ensure_directory 0755 /run/homestead
+	ensure_directory 0755 /opt/homestead/stacks
+	systemctl daemon-reload
+	deb-systemd-helper enable homestead-server.service >/dev/null
+	if [ -n "${2:-}" ]; then
+		deb-systemd-invoke try-restart homestead-server.service
+	else
+		deb-systemd-invoke start homestead-server.service
+	fi
+	;;
+esac
+
+exit 0

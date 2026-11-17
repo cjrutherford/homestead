@@ -19,10 +19,11 @@
   installs Docker from Docker's pinned-key apt repository. The S071
   `docker.install` operation (`internal/docker/install.go`) stays unwired;
   removing it or reusing it from the dashboard is open.
-- Dashboard build on the appliance (S307): `bootstrap.sh` and
-  `install-systemd.sh` embed the dashboard only if `internal/dashboard/dist`
-  was already built (Node.js 24 and pnpm); otherwise the daemon is API-only.
-  A release artifact with the dashboard built in would remove the step.
+- Dashboard build on the appliance (S307): the source-checkout path through
+  `bootstrap.sh` and `install-systemd.sh` embeds the dashboard only if
+  `internal/dashboard/dist` was already built (Node.js 24 and pnpm); otherwise
+  the daemon is API-only. S509's local Debian packages include the dashboard,
+  but package publication is not part of the release workflow.
 - Closed in S290: pre-S246 tunnels can be adopted with `tunnel setup
   --adopt ID` (ADR-041 §2).
 - AdGuard Home install-wizard automation (`POST /control/install/configure`):
@@ -116,6 +117,9 @@
   nothing renames them to the bare component names; no
   checksum-file counter automation (RELEASE_COUNTER is raised by hand);
   no release notes beyond the CHANGELOG section.
+- Debian package distribution (S509): `make deb` builds architecture-specific
+  packages and checksums locally, but the release workflow does not upload or
+  sign `.deb` artifacts.
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.

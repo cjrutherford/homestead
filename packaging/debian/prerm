@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+remove|deconfigure)
+	deb-systemd-invoke stop homestead-server.service homestead-tunnel.service homestead-apply.service || true
+	deb-systemd-helper disable homestead-server.service homestead-tunnel.service homestead-apply.service >/dev/null || true
+	;;
+esac
+
+exit 0
