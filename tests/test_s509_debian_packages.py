@@ -24,6 +24,7 @@ class DebianPackageTest(unittest.TestCase):
                 binary.write_bytes(b"arm64 fixture, packaging test only\n")
                 binary.chmod(0o755)
             env = dict(os.environ, DEB_MAINTAINER="Package Test <packages@example.invalid>")
+            version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
             subprocess.run(
                 [
                     str(REPO / "scripts/build-deb.sh"),
@@ -37,12 +38,12 @@ class DebianPackageTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            package = output / "homestead_0.0.1-1_arm64.deb"
+            package = output / f"homestead_{version}-1_arm64.deb"
             metadata = subprocess.run(
                 ["dpkg-deb", "-f", str(package)], check=True, capture_output=True, text=True
             ).stdout
             self.assertIn("Package: homestead\n", metadata)
-            self.assertIn("Version: 0.0.1-1\n", metadata)
+            self.assertIn(f"Version: {version}-1\n", metadata)
             self.assertIn("Architecture: arm64\n", metadata)
             self.assertIn("Maintainer: Package Test <packages@example.invalid>\n", metadata)
             contents = subprocess.run(
@@ -66,6 +67,7 @@ class DebianPackageTest(unittest.TestCase):
 
     def test_maintainer_scripts_provision_without_erasing_appliance_data(self):
         scripts = REPO / "packaging/debian"
+        version = (REPO / "VERSION").read_text(encoding="utf-8").strip()
         for name in ("postinst", "prerm", "postrm"):
             subprocess.run(["sh", "-n", str(scripts / name)], check=True)
 
@@ -101,7 +103,7 @@ class DebianPackageTest(unittest.TestCase):
             with log.open("a", encoding="utf-8") as f:
                 f.write("---upgrade---\n")
             subprocess.run(
-                ["sh", str(scripts / "postinst"), "configure", "0.0.1-1"], env=env, check=True
+                ["sh", str(scripts / "postinst"), "configure", f"{version}-1"], env=env, check=True
             )
             subprocess.run(["sh", str(scripts / "prerm"), "remove"], env=env, check=True)
             subprocess.run(["sh", str(scripts / "postrm"), "purge"], env=env, check=True)

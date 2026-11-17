@@ -48,8 +48,12 @@ describe('App', () => {
   it('renders the brand and primary nav', () => {
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Homestead');
+    const mark = fixture.nativeElement.querySelector('.sidebar .brand-mark img') as HTMLImageElement;
+    expect(mark.getAttribute('src')).toBe('/brand/homestead-logo.png');
+    expect(mark.getAttribute('alt')).toBe('');
     const link = fixture.nativeElement.querySelector('nav a[href="/admin/status"]');
     expect(link?.textContent).toContain('Status');
+    expect(link?.querySelector('hs-fieldwork-glyph span')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('offers login in the sidebar foot when logged out', () => {

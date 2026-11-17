@@ -4,7 +4,9 @@
     <p class="masthead-fact">{{ fact() }}</p>
   </header>
   <p>
-    Apps you can install on this appliance. Pick one to see what it needs, then install it step by step.
+    Browse the curated apps for this appliance. Select one to review its
+    requirements before installation; installed apps remain ordinary Compose
+    projects.
   </p>
 
   @if (error()) {
@@ -57,7 +59,7 @@
         <ul class="catalog-list">
           @for (pkg of packages(); track pkg.name) {
             <li class="catalog-item">
-              <hs-app-icon class="app-icon" [icon]="pkg.icon" [title]="pkg.title" />
+              <hs-app-icon class="app-icon" [icon]="pkg.icon" [name]="pkg.name" [title]="pkg.title" />
               <div class="catalog-text">
                 <strong>{{ pkg.title }}</strong>
                 <span class="hint">Version {{ pkg.version }}</span>

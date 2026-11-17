@@ -11,6 +11,7 @@ import { WorkOrders } from './core/work-orders.service';
 import { Reauth } from './core/reauth';
 import { stepUpErrorMessage } from './core/sso-errors';
 import { ToastService } from './core/toast.service';
+import { FieldworkGlyph } from './ui/fieldwork-glyph';
 import { ToastRegion } from './ui/toast-region';
 import { WorkOrdersRail } from './ui/work-orders-rail';
 
@@ -58,7 +59,7 @@ function groupOf(url: string): string | null {
  * work-orders rail, which becomes a bottom sheet below md.
  */
 @Component({
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, WorkOrdersRail, ToastRegion, NgComponentOutlet],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, WorkOrdersRail, ToastRegion, NgComponentOutlet, FieldworkGlyph],
   selector: 'app-root',
   styleUrl: './app.css',
   templateUrl: './app.html',

@@ -1,8 +1,8 @@
 # Homestead branding and iconography handoff
 
-This brief gives the next branding pass factual product context and the
-current visual starting point. It asks for design assets and usage guidance;
-it does not authorize a visual redesign in this slice.
+This brief records product facts and the supporting identity direction.
+S510 integrates the supplied Fieldwork navigation and catalog illustrations
+without replacing the primary mark or redesigning the established theme.
 
 ## Product in brief
 
@@ -75,8 +75,9 @@ availability, or compatibility promises.
 
 ## Current name, visual system, and assets
 
-- Product name: **Homestead**. The dashboard currently renders the name as
-  text in its shell (`dashboard/src/app/app.html`).
+- Product name: **Homestead**. The admin shell and apps header pair the name
+  with the existing mark (`dashboard/src/app/app.html`,
+  `dashboard/src/app/home/home.html`).
 - Working emblem/wordmark: [`assets/homestead-logo.png`](../assets/homestead-logo.png),
   a 1254×1254 transparent PNG with emerald, cream, and gold corn/network
   imagery. [`assets/README.md`](../assets/README.md) calls it a working asset
@@ -87,29 +88,24 @@ availability, or compatibility promises.
   Lamplight is dark by default, with light, system, and high-contrast choices.
 - Bundled UI typefaces are Atkinson Hyperlegible Next, Atkinson Hyperlegible
   Mono, and Barlow Semi Condensed for display use (`dashboard/src/fonts.css`).
-- Catalog app marks are selected Material Design Icons bundled locally from
-  the catalog's icon names (`dashboard/src/app/ui/app-icons.ts`). They are
-  application icons, not the Homestead brand mark.
+- Catalog entries use monochrome Fieldwork illustrations for five verified
+  package IDs and keep manifest-keyed Material Design Icons for other
+  packages (`dashboard/src/app/ui/app-icon.ts`). The labels remain visible;
+  neither illustration family is used as the Homestead brand mark. Bundle
+  provenance and mapping are documented in
+  [`assets/brand/fieldwork/README.md`](../assets/brand/fieldwork/README.md).
 
-## Requested branding deliverables
+## Remaining identity work
 
-Prepare a compact, implementation-ready asset handoff for a later engineering
-slice:
-
-1. Refined primary mark and wordmark, with editable vector source and clear
-   horizontal, stacked, and symbol-only forms.
-2. Favicon and dashboard/app-icon exports that remain legible at small sizes;
-   include monochrome and light/dark-background variants where they help.
-3. A restrained color and type usage sheet that maps to the existing
-   accessible dashboard themes or clearly identifies proposed token changes.
-4. Minimum size, clear space, background, contrast, and co-branding guidance.
-5. A source-file and export manifest with dimensions, formats, and licenses
-   for any new typeface or third-party asset.
-
-Keep the existing logo PNG as a reference and state whether it is being
-retained or replaced. Do not create implementation code, dashboard changes,
-marketing claims, fabricated customer quotes, or security guarantees in the
-branding handoff phase.
+The supplied bundle contains no primary vector source or favicon. The
+1254×1254 logo PNG remains the primary mark; `dashboard/public/favicon.ico`
+is unchanged. The shell clips the supplied raster's lower wordmark area in a
+fixed-size display window and renders the product name as separate text; the
+source image is not edited. A later asset pass can create a vector master,
+small-size favicon/app-icon exports, and use guidance after the original logo
+source is available. The bundle's marketing landing-page concept is not
+deployed. Do not turn its proposed language into compatibility, privacy,
+security, or availability guarantees.
 
 ## Source references
 

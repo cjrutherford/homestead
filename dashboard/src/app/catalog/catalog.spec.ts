@@ -128,6 +128,8 @@ describe('Catalog', () => {
 
   it('lists curated packages', () => {
     load();
+    expect(text()).toContain('Browse the curated apps for this appliance.');
+    expect(text()).toContain('installed apps remain ordinary Compose projects.');
     expect(text()).toContain('Jellyfin');
     expect(text()).toContain('Media server you control.');
   });

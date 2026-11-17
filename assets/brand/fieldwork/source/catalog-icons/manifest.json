@@ -1,0 +1,135 @@
+[
+  {
+    "provisional_id": "nextcloud",
+    "name": "Nextcloud",
+    "purpose": "Files and collaboration",
+    "accent": "#83C9D8",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "nextcloud-dark.svg",
+      "nextcloud-light.svg",
+      "nextcloud-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "immich",
+    "name": "Immich",
+    "purpose": "Photos and memories",
+    "accent": "#E4AD91",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "immich-dark.svg",
+      "immich-light.svg",
+      "immich-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "jellyfin",
+    "name": "Jellyfin",
+    "purpose": "Movies, shows and music",
+    "accent": "#B5B5E7",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "jellyfin-dark.svg",
+      "jellyfin-light.svg",
+      "jellyfin-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "paperless",
+    "name": "Paperless-ngx",
+    "purpose": "Document organization",
+    "accent": "#E9C77B",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "paperless-dark.svg",
+      "paperless-light.svg",
+      "paperless-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "vaultwarden",
+    "name": "Vaultwarden",
+    "purpose": "Password management",
+    "accent": "#91C4A3",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "vaultwarden-dark.svg",
+      "vaultwarden-light.svg",
+      "vaultwarden-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "collabora",
+    "name": "Collabora",
+    "purpose": "Collaborative documents",
+    "accent": "#E4B5CF",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "collabora-dark.svg",
+      "collabora-light.svg",
+      "collabora-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  },
+  {
+    "provisional_id": "home-assistant",
+    "name": "Home Assistant",
+    "purpose": "Home automation",
+    "accent": "#A6CFA2",
+    "status": "planning reference; repository unverified",
+    "svg": [
+      "home-assistant-dark.svg",
+      "home-assistant-light.svg",
+      "home-assistant-mono.svg"
+    ],
+    "png_sizes": [
+      32,
+      64,
+      128,
+      256
+    ],
+    "license": "Original artwork prepared for Homestead; no third-party logo assets included"
+  }
+]

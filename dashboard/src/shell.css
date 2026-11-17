@@ -89,6 +89,26 @@
   line-height: 1.05;
 }
 
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.brand-mark {
+  flex: none;
+  width: 3rem;
+  height: 2.5rem;
+  overflow: hidden;
+}
+
+.brand-mark img {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
+}
+
 .sidebar a:focus-visible,
 .sidebar button:focus-visible,
 .shell-topbar button:focus-visible {
@@ -159,6 +179,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  gap: var(--spacing-sm);
   min-height: var(--touch-target);
   margin-inline-end: var(--spacing-sm);
   padding: 0 var(--spacing-md);

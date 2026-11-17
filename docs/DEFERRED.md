@@ -11,6 +11,10 @@
 - Hosted HAI coordination/control service
 - Multi-appliance dashboard
 - Live storage migration between devices
+- Primary brand-vector and favicon exports (S510): the supplied Fieldwork
+  bundle has supporting navigation and catalog art but no editable source for
+  the existing corn mark. The current PNG and favicon remain in use. The
+  proposed static marketing landing page is also not deployed.
 - Connector binary installation: closed in S308 (ADR-042); `bootstrap.sh`
   installs cloudflared from Cloudflare's pinned-key apt repository. S246
   setup still refuses with instructions when it is absent
