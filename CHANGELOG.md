@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.3
+
+- Update Debian-managed Homestead installations through the CLI or dashboard
+  using signed packages, an owner-approved APT preview, and a privileged
+  package transaction. The daemon verifies health after restarting and records
+  the operation durably.
+- Keep source-managed binary updates available and preserve the owner’s
+  existing configuration and state during package upgrades.
+
 ## 0.0.2
 
 - Apply the supplied Fieldwork supporting identity to the dashboard shell and
