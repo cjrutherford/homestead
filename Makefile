@@ -70,7 +70,7 @@ check: lint build test
 # RELEASE_COUNTER with every release (ADR-025 rollback protection).
 # Signing is offline and manual: this target never touches a key.
 VERSION := $(shell cat VERSION)
-RELEASE_COUNTER ?= 2
+RELEASE_COUNTER ?= 3
 RELEASE_DIR := dist/release
 # Production release public key (S493): the .pub file from
 # scripts/release/keygen.sh. Defaults to release/release.pub when that file
