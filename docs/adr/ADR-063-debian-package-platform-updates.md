@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted by the owner on 2026-11-17.
+Accepted
+
+Decided by the owner on 2026-11-17.
 
 Supersedes the binary-only apply procedure in ADR-027 for dpkg-managed
 installations. ADR-027 remains in force for source-managed installations.
