@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/debianupdate"
 	"homestead/internal/operation"
 	"homestead/internal/release"
 	"homestead/internal/update"
@@ -60,6 +61,7 @@ var (
 	ErrCurrent     = errors.New("platformapply: release is already installed")
 	ErrBusy        = errors.New("platformapply: a platform update is already running or pending")
 	ErrNoPending   = errors.New("platformapply: no pending apply to clear")
+	ErrMode        = debianupdate.ErrMode
 )
 
 // Systemd is the slice of systemd the apply path uses; tests substitute
@@ -137,6 +139,7 @@ type Applier struct {
 	Ops      *operation.Store
 	Audit    *audit.Service
 	Systemd  Systemd
+	Debian   debianupdate.Manager
 	// BinDir holds the installed binaries (/usr/local/bin); StagingDir is
 	// the root-owned staging directory under the layout's state dir.
 	BinDir     string
@@ -166,6 +169,7 @@ type Request struct {
 	Signature  string
 	Actor      string
 	AllowOlder bool
+	PlanDigest string
 }
 
 type plan struct {
@@ -174,6 +178,7 @@ type plan struct {
 	from        string
 	override    bool
 	overrideWhy string
+	packagePlan *debianupdate.Preview
 }
 
 func (a *Applier) binPath(component string) string { return filepath.Join(a.BinDir, component) }
@@ -181,7 +186,7 @@ func (a *Applier) binPath(component string) string { return filepath.Join(a.BinD
 // preflight decides whether req may start: only releases that verify
 // from the supplied files and carry a verified record, older counters
 // only with the explicit override.
-func (a *Applier) preflight(req Request) (plan, error) {
+func (a *Applier) preflight(ctx context.Context, req Request) (plan, error) {
 	var p plan
 	if !update.IsPlatformComponent(req.Component) {
 		return p, fmt.Errorf("%w: unknown platform component %q", ErrInput, req.Component)
@@ -193,6 +198,20 @@ func (a *Applier) preflight(req Request) (plan, error) {
 	}
 	if req.Actor == "" {
 		return p, fmt.Errorf("%w: actor is required", ErrInput)
+	}
+	_, packageErr := a.Debian.Installed(ctx)
+	packageManaged := packageErr == nil
+	if packageErr != nil && !errors.Is(packageErr, debianupdate.ErrNotInstalled) {
+		return p, packageErr
+	}
+	if req.Component != update.ComponentDeb && req.PlanDigest != "" {
+		return p, fmt.Errorf("%w: plan digest is only valid for Debian package updates", ErrInput)
+	}
+	if req.Component == update.ComponentDeb && !packageManaged {
+		return p, fmt.Errorf("%w: install mode is source-managed; package updates require a dpkg-managed installation", ErrMode)
+	}
+	if req.Component != update.ComponentDeb && packageManaged {
+		return p, fmt.Errorf("%w: dpkg owns this installation; update the homestead-deb component", ErrMode)
 	}
 	records, err := a.Releases.Releases()
 	if err != nil {
@@ -235,6 +254,28 @@ func (a *Applier) preflight(req Request) (plan, error) {
 		return p, fmt.Errorf("%w: they differ from the verified record (%s counter %d); verify again", ErrDigest, rec.Version, rec.Counter)
 	}
 	p.res = res
+	if req.Component == update.ComponentDeb {
+		if req.AllowOlder {
+			return p, fmt.Errorf("%w: package updates are forward-only", ErrOlder)
+		}
+		preview, err := a.Debian.Preview(ctx, req.Artifact, res.Version)
+		if err != nil {
+			return p, fmt.Errorf("%w: %v", ErrNotVerified, err)
+		}
+		if preview.ArtifactSHA != res.SHA256 {
+			return p, ErrDigest
+		}
+		if req.PlanDigest == "" || req.PlanDigest != preview.Digest {
+			return p, debianupdate.ErrPlanChanged
+		}
+		p.packagePlan = &preview
+		currentVersion, err := debianupdate.ReleaseVersion(preview.Installed)
+		if err != nil {
+			return p, err
+		}
+		p.from = currentVersion
+		return p, nil
+	}
 	installedSHA, err := hashFile(a.binPath(req.Component))
 	if err != nil {
 		return p, fmt.Errorf("%w: no installed %s at %s", ErrInput, req.Component, a.binPath(req.Component))
@@ -298,12 +339,12 @@ func (a *Applier) Start(ctx context.Context, req Request) (operation.Operation, 
 			return operation.Operation{}, fmt.Errorf("%w: operation %d", ErrBusy, op.ID)
 		}
 	}
-	p, err := a.preflight(req)
+	p, err := a.preflight(ctx, req)
 	if err != nil {
 		return operation.Operation{}, err
 	}
 	base := filepath.Base(req.Artifact)
-	if base == "checksums.staged" || base == "signature.staged" {
+	if base == "" || base == "." || base == ".." || base == "checksums.staged" || base == "signature.staged" {
 		return operation.Operation{}, fmt.Errorf("%w: reserved artifact file name", ErrInput)
 	}
 	r := &run{a: a, req: req, p: p, ready: make(chan struct{}), staged: stagedFiles{
@@ -406,7 +447,11 @@ func (r *run) stage(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	sum, n, err := copyFile(r.req.Artifact, r.staged.artifact, 0o755)
+	artifactMode := os.FileMode(0o755)
+	if r.req.Component == update.ComponentDeb {
+		artifactMode = 0o600
+	}
+	sum, n, err := copyFile(r.req.Artifact, r.staged.artifact, artifactMode)
 	if err != nil {
 		return err
 	}
@@ -436,6 +481,15 @@ func (r *run) stage(ctx context.Context) error {
 	if verr != nil || res.SHA256 != r.p.res.SHA256 || res.Counter != r.p.res.Counter || res.Version != r.p.res.Version {
 		return fmt.Errorf("%w: staged files do not verify: %v", ErrDigest, verr)
 	}
+	if r.req.Component == update.ComponentDeb {
+		preview, err := r.a.Debian.Preview(ctx, r.staged.artifact, res.Version)
+		if err != nil {
+			return fmt.Errorf("%w: staged Debian package plan: %v", ErrNotVerified, err)
+		}
+		if r.p.packagePlan == nil || preview.ArtifactSHA != r.p.res.SHA256 || preview.Digest != r.p.packagePlan.Digest {
+			return debianupdate.ErrPlanChanged
+		}
+	}
 	return nil
 }
 
@@ -446,12 +500,17 @@ func (r *run) handoff(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	binaryPath := r.a.binPath(r.req.Component)
+	if r.req.Component == update.ComponentDeb {
+		binaryPath = ""
+	}
 	marker := Marker{
 		OpID: r.opID, Component: r.req.Component, FromVersion: r.p.from, FromCounter: r.p.inst.Counter,
-		ToVersion: r.p.res.Version, ToCounter: r.p.res.Counter, SHA256: r.p.res.SHA256, BinaryPath: r.a.binPath(r.req.Component),
+		ToVersion: r.p.res.Version, ToCounter: r.p.res.Counter, SHA256: r.p.res.SHA256, BinaryPath: binaryPath,
 		Override: r.p.override, OverrideWhy: r.p.overrideWhy, Actor: r.req.Actor,
 		StagedArtifact: r.staged.artifact, StagedChecksums: r.staged.checksums, StagedSignature: r.staged.signature,
 		AllowOlder: r.req.AllowOlder, Listen: r.a.Listen, SocketPath: r.a.SocketPath,
+		PlanDigest: r.req.PlanDigest,
 	}
 	if err := r.a.Markers.Begin(marker); err != nil {
 		return err
@@ -518,6 +577,9 @@ func (a *Applier) ClearApply(ctx context.Context, actor string) (Marker, error) 
 	}
 	msg := fmt.Sprintf("apply of %s %s cleared by %s: its apply unit did not finish. If the binary was changed, check it against %s",
 		m.Component, m.ToVersion, actor, m.PreviousPath)
+	if m.Component == update.ComponentDeb {
+		msg = fmt.Sprintf("apply of Homestead package %s cleared by %s: its apply unit did not finish. Inspect `dpkg --audit`, package status, service health, and the retained staged package before another update; no rollback was attempted.", m.ToVersion, actor)
+	}
 	cleanDir(a.StagingDir)
 	advanceOp(a.Ops, m, false, "", msg)
 	a.record(audit.Entry{Actor: actor, Action: ActionClear, Outcome: audit.OutcomeOK,

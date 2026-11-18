@@ -17,12 +17,29 @@
 }
 
 .home-mark {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
   margin: 0;
   font-family: var(--font-display);
   font-size: var(--font-size-xxl);
   font-weight: 600;
   letter-spacing: var(--tracking-display);
   line-height: 1.05;
+}
+
+.home-mark-symbol {
+  flex: none;
+  width: 3rem;
+  height: 2.5rem;
+  overflow: hidden;
+}
+
+.home-mark-symbol img {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  object-fit: contain;
 }
 
 .home-actions {

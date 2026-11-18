@@ -1,6 +1,9 @@
 <div class="home">
   <header class="home-bar">
-    <p class="home-mark">Homestead</p>
+    <div class="home-mark">
+      <span class="home-mark-symbol"><img src="/brand/homestead-logo.png" alt="" /></span>
+      <span>Homestead</span>
+    </div>
     <nav class="home-actions" aria-label="Account">
       <a class="button guide-link" href="/guide/">Guide</a>
       @if (isOwner()) {
@@ -26,7 +29,7 @@
             @for (app of apps(); track app.name) {
               <li>
                 <div class="tile" [attr.data-icon]="app.icon">
-                  <hs-app-icon class="tile-icon" [icon]="app.icon" [title]="app.title || app.name" />
+                  <hs-app-icon class="tile-icon" [icon]="app.icon" [name]="app.name" [title]="app.title || app.name" />
                   <span class="tile-name">{{ app.title }}</span>
                   <span class="tile-links">
                     <a class="tile-link" [href]="app.local_url" [attr.aria-label]="'Open ' + app.title + ' on the local network'">Local</a>

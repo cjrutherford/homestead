@@ -109,6 +109,9 @@ func (a *Applier) Rollback(ctx context.Context, req RollbackRequest) (operation.
 	if !update.IsPlatformComponent(req.Component) {
 		return operation.Operation{}, fmt.Errorf("%w: unknown platform component %q", ErrInput, req.Component)
 	}
+	if req.Component == update.ComponentDeb {
+		return operation.Operation{}, errors.New("platformapply: Debian package updates are forward-only; no automatic or blind package downgrade is supported")
+	}
 	if req.Actor == "" {
 		return operation.Operation{}, fmt.Errorf("%w: actor is required", ErrInput)
 	}

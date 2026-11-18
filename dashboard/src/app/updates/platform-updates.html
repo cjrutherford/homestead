@@ -92,14 +92,26 @@
   <section class="field-panel" aria-labelledby="platform-apply">
     <h2 id="platform-apply">Apply a verified release</h2>
     <p>
-      Applies the files named under Artifact, Checksums file and Signature file
-      below: they are verified again and staged, and a separate privileged unit
-      verifies the staged copies once more before replacing anything. The previous binary is kept; a failed health check restores it automatically, and you can roll back manually below.
+      The owner supplies the signed release files below. The daemon and its
+      isolated privileged apply unit verify them again before updating.
     </p>
     @for (release of view()?.releases ?? []; track release.component) {
       @if (release.state === 'verified' && release.version) {
         <div>
           <p>Apply {{ release.component }} {{ release.version }} (counter {{ release.counter }})</p>
+          @if (release.component === 'homestead-deb') {
+            @if (packagePlanFor(release); as packagePlan) {
+              <p>APT preview: {{ packagePlan.package_version }} for {{ packagePlan.architecture }}, upgrading {{ packagePlan.installed_version }}.</p>
+              <ul>
+                @for (action of packagePlan.actions; track action) {
+                  <li><code>{{ action }}</code></li>
+                }
+              </ul>
+              <p>Plan digest: <code>{{ packagePlan.digest }}</code></p>
+            } @else {
+              <p class="warning">Verify this package again to review its current APT plan before applying.</p>
+            }
+          }
           <label>
             <input
               type="checkbox"
@@ -121,7 +133,7 @@
               I confirm applying an older release (recorded in the audit trail)
             </label>
           }
-          <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !checksums || !signature || !applyConfirmed">
+          <button type="button" (click)="apply(release)" [disabled]="busy() || !artifact || !checksums || !signature || !applyConfirmed || (release.component === 'homestead-deb' && !packagePlanFor(release))">
             Apply {{ release.component }} {{ release.version }}
           </button>
         </div>
@@ -169,6 +181,7 @@
       <select name="component" (change)="component = $any($event.target).value">
         <option value="homestead-server">homestead-server</option>
         <option value="homesteadctl">homesteadctl</option>
+        <option value="homestead-deb">homestead-deb</option>
       </select>
     </label>
     <label>
@@ -186,6 +199,15 @@
     @if (last(); as result) {
       @if (result.state === 'verified') {
         <p>Verified {{ result.version }} (counter {{ result.counter }}).</p>
+        @if (result.package_plan; as packagePlan) {
+          <p>APT preview for {{ packagePlan.package_version }} ({{ packagePlan.architecture }}), upgrading {{ packagePlan.installed_version }}:</p>
+          <ul>
+            @for (action of packagePlan.actions; track action) {
+              <li><code>{{ action }}</code></li>
+            }
+          </ul>
+          <p>Approval digest: <code>{{ packagePlan.digest }}</code></p>
+        }
       } @else {
         <app-state-message kind="error" [headline]="'Verification failed: ' + result.detail" />
         @if (result.refusal === 'rollback') {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/debianupdate"
 	"homestead/internal/operation"
 	"homestead/internal/release"
 	"homestead/internal/update"
@@ -28,6 +29,7 @@ type Runner struct {
 	Ops      *operation.Store
 	Audit    *audit.Service
 	Systemd  Systemd
+	Debian   debianupdate.Manager
 	// Unit is the daemon's unit.
 	Unit       string
 	StagingDir string
@@ -81,18 +83,27 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := u.step(ctx, "verify-staged", u.verify); err != nil {
 		return u.fail(ctx, err)
 	}
-	if err := u.step(ctx, "preserve-previous", u.preserve); err != nil {
-		return u.fail(ctx, err)
-	}
-	if err := u.step(ctx, "replace", u.replace); err != nil {
-		return u.fail(ctx, err)
-	}
-	if m.Component == update.ComponentDaemon {
-		if err := u.step(ctx, "restart", u.restart); err != nil {
+	if m.Component == update.ComponentDeb {
+		if err := u.step(ctx, "install-package", u.installPackage); err != nil {
 			return u.fail(ctx, err)
+		}
+	} else {
+		if err := u.step(ctx, "preserve-previous", u.preserve); err != nil {
+			return u.fail(ctx, err)
+		}
+		if err := u.step(ctx, "replace", u.replace); err != nil {
+			return u.fail(ctx, err)
+		}
+		if m.Component == update.ComponentDaemon {
+			if err := u.step(ctx, "restart", u.restart); err != nil {
+				return u.fail(ctx, err)
+			}
 		}
 	}
 	if err := u.step(ctx, "health-check", func(ctx context.Context) error { return u.healthy(ctx, u.m) }); err != nil {
+		if m.Component == update.ComponentDeb {
+			return u.fail(ctx, err)
+		}
 		return u.rollbackAfter(ctx, err)
 	}
 	return u.succeed(ctx)
@@ -119,8 +130,11 @@ func (u *unitRun) step(ctx context.Context, name string, fn func(context.Context
 // minisign signature and checksums against the trusted keys, the digest
 // of the staged artifact, and the counter against the installed baseline.
 // The database "verified" record is not consulted.
-func (u *unitRun) verify(context.Context) error {
+func (u *unitRun) verify(ctx context.Context) error {
 	m := u.m
+	if m.Component == update.ComponentDeb && filepath.Dir(filepath.Clean(m.StagedArtifact)) != filepath.Clean(u.r.StagingDir) {
+		return fmt.Errorf("%w: staged Debian artifact is outside the fixed update directory", ErrInput)
+	}
 	keys, err := u.r.Releases.PublicKeys()
 	if err != nil {
 		return err
@@ -140,7 +154,26 @@ func (u *unitRun) verify(context.Context) error {
 		return fmt.Errorf("staged release is %s counter %d (sha256 %.12s), not the %s counter %d the daemon staged",
 			res.Version, res.Counter, res.SHA256, m.ToVersion, m.ToCounter)
 	}
+	if m.Component == update.ComponentDeb {
+		preview, err := u.r.Debian.Preview(ctx, m.StagedArtifact, res.Version)
+		if err != nil {
+			return fmt.Errorf("Debian package plan: %w", err)
+		}
+		if preview.ArtifactSHA != m.SHA256 || preview.Digest != m.PlanDigest {
+			return debianupdate.ErrPlanChanged
+		}
+	}
 	return nil
+}
+
+func (u *unitRun) installPackage(ctx context.Context) error {
+	if u.m.Component != update.ComponentDeb || u.m.PlanDigest == "" {
+		return fmt.Errorf("%w: Debian package apply marker is incomplete", ErrInput)
+	}
+	if filepath.Dir(filepath.Clean(u.m.StagedArtifact)) != filepath.Clean(u.r.StagingDir) {
+		return fmt.Errorf("%w: staged Debian artifact is outside the fixed update directory", ErrInput)
+	}
+	return u.r.Debian.Install(ctx, u.m.StagedArtifact)
 }
 
 func (u *unitRun) preserve(ctx context.Context) error {
@@ -236,6 +269,36 @@ func (u *unitRun) execDigest(pid int) (string, error) {
 // target version (m names the target: SHA256 and ToVersion). The CLI is
 // checked on disk by digest.
 func (u *unitRun) check(ctx context.Context, m Marker) error {
+	if m.Component == update.ComponentDeb {
+		installed, err := u.r.Debian.Installed(ctx)
+		if err != nil {
+			return fmt.Errorf("dpkg package state: %w", err)
+		}
+		arch, err := u.r.Debian.NativeArchitecture(ctx)
+		if err != nil {
+			return err
+		}
+		releaseVersion, err := debianupdate.ReleaseVersion(installed.Version)
+		if err != nil || installed.Package != "homestead" || installed.Architecture != arch || releaseVersion != m.ToVersion {
+			return fmt.Errorf("dpkg does not report homestead %s for architecture %s", m.ToVersion, arch)
+		}
+		if err := u.r.Debian.VerifyInstalledBinaries(ctx, m.ToVersion); err != nil {
+			return err
+		}
+		pid, err := u.r.Systemd.MainPID(ctx, u.r.Unit)
+		if err != nil || pid <= 0 {
+			return fmt.Errorf("daemon is not running after package transaction: %v", err)
+		}
+		if _, err := u.r.Releases.Installed(m.Component); err != nil {
+			return fmt.Errorf("database check: %w", err)
+		}
+		if u.r.Probe != nil {
+			if err := u.r.Probe(ctx, m); err != nil {
+				return fmt.Errorf("listener probe: %w", err)
+			}
+		}
+		return nil
+	}
 	if m.Component != update.ComponentDaemon {
 		got, err := hashFile(m.BinaryPath)
 		if err != nil {
@@ -308,6 +371,9 @@ func (u *unitRun) failureMessage(cause error) string {
 			"if the daemon is down, restart it with: %s",
 			m.Component, m.ToVersion, cause, m.BinaryPath, u.replacedNote(), RestoreCommand(m, u.r.Unit))
 	}
+	if m.Component == update.ComponentDeb {
+		return fmt.Sprintf("apply of Homestead package %s failed: %v; dpkg state or SQLite may have changed. No downgrade or database restore was attempted. Staged inputs were retained at %s; inspect `dpkg --audit` and the package operation before recovery.", m.ToVersion, cause, u.r.StagingDir)
+	}
 	if !u.swapped {
 		return fmt.Sprintf("apply of %s %s failed: %v; the installed binary was not changed", m.Component, m.ToVersion, cause)
 	}
@@ -328,7 +394,9 @@ func (u *unitRun) finish(msg string) error {
 	// Staged files go before the operation shows as finished and the
 	// marker clears: a follower may start the next apply the moment it
 	// sees the end, and cleaning afterwards would delete its fresh staging.
-	cleanDir(u.r.StagingDir)
+	if u.m.Component != update.ComponentDeb {
+		cleanDir(u.r.StagingDir)
+	}
 	advanceOp(u.r.Ops, u.m, false, "", msg)
 	entry := audit.Entry{Actor: u.m.Actor, Action: ActionFinalize, Outcome: audit.OutcomeError, Detail: msg}
 	if u.m.Override {

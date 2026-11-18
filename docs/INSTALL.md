@@ -168,6 +168,36 @@ container) and answers on `homestead.local`. It is safe to re-run the
 installer. To update to a newer release later, check it out, rebuild the
 dashboard, and run `sudo make install`.
 
+### B4. Install a prebuilt Debian package
+
+This is an alternative to the source build and installer in B1–B3. Prepare
+Docker/Compose and, if needed, cloudflared using A3 first; the package does not
+install those host services. On Debian 13, install the `.deb` for the machine's
+architecture:
+
+```bash
+sudo apt install ./homestead_<version>-<revision>_amd64.deb
+```
+
+Use the `_arm64.deb` asset on a 64-bit ARM machine. The package contains the
+daemon, CLI, embedded dashboard, systemd units, curated catalog, and required
+catalog build assets. It starts Homestead unclaimed. It does not install
+Docker, Compose, or cloudflared; use the source bootstrap beforehand or
+provide compatible host services yourself. Docker with Compose v2 is needed
+for catalog apps. cloudflared is needed only for public access.
+
+The amd64 binaries have run on the Debian 13 review appliance, but this `.deb`
+package lifecycle has not been installed there. The arm64 package is
+cross-built and its ELF binaries and metadata are inspected, but it has not
+been exercised on arm64 hardware. Ubuntu compatibility is not verified for
+these package artifacts. See `docs/RELEASING.md` for package build and
+checksum instructions.
+
+`apt remove homestead` stops and disables Homestead services and removes
+package-owned files. It leaves configuration, SQLite state, Compose stacks,
+containers, volumes, mounted data, and system groups in place. `apt purge`
+also leaves that appliance data in place; package purge is not factory reset.
+
 Check:
 
 ```bash

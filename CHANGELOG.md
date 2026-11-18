@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.0.2
+
+- Apply the supplied Fieldwork supporting identity to the dashboard shell and
+  navigation, retaining the existing Homestead corn mark and dashboard theme
+  tokens.
+- Add monochrome catalog illustrations for package IDs present in the current
+  catalog: Nextcloud, Immich, Jellyfin, Paperless-ngx, and Vaultwarden. Other
+  packages keep their existing bundled icons.
+- Build local Debian packages with the updated dashboard assets for amd64 and
+  arm64. No API, CLI, application lifecycle, or network behavior changes.
+
 ## 0.0.1
 
 First release. Homestead is a private-cloud appliance you own: a native Go

@@ -3,6 +3,8 @@
 export interface NavItem {
   label: string;
   path: string;
+  /** Supplied Fieldwork glyph. The visible label remains the accessible name. */
+  icon?: string;
   /** Visible to logged-out visitors. */
   public?: boolean;
   /** Visible only while the appliance is unclaimed. */
@@ -22,57 +24,57 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     id: 'overview',
     label: 'Overview',
     items: [
-      { label: 'Status', path: '/admin/status', public: true },
-      { label: 'Setup', path: '/setup', setup: true },
-      { label: 'Claim', path: '/claim', public: true, unclaimedOnly: true },
+      { label: 'Status', path: '/admin/status', icon: 'overview', public: true },
+      { label: 'Setup', path: '/setup', icon: 'review', setup: true },
+      { label: 'Claim', path: '/claim', icon: 'host', public: true, unclaimedOnly: true },
     ],
   },
   {
     id: 'apps',
     label: 'Apps',
     items: [
-      { label: 'Catalog', path: '/admin/catalog' },
-      { label: 'Craft apps', path: '/admin/craft-apps' },
-      { label: 'Craft files', path: '/admin/craft-files' },
-      { label: 'Updates', path: '/admin/updates' },
-      { label: 'Data', path: '/admin/data' },
+      { label: 'Catalog', path: '/admin/catalog', icon: 'catalog' },
+      { label: 'Craft apps', path: '/admin/craft-apps', icon: 'catalog' },
+      { label: 'Craft files', path: '/admin/craft-files', icon: 'configuration' },
+      { label: 'Updates', path: '/admin/updates', icon: 'updates' },
+      { label: 'Data', path: '/admin/data', icon: 'storage' },
     ],
   },
   {
     id: 'network',
     label: 'Network',
     items: [
-      { label: 'Edge', path: '/admin/edge' },
-      { label: 'Exposure', path: '/admin/exposure' },
-      { label: 'Tunnel', path: '/admin/tunnel' },
-      { label: 'Names', path: '/admin/names' },
-      { label: 'Certificates', path: '/admin/tls' },
-      { label: 'Trust', path: '/admin/trust' },
-      { label: 'Firewall', path: '/admin/firewall' },
+      { label: 'Edge', path: '/admin/edge', icon: 'network' },
+      { label: 'Exposure', path: '/admin/exposure', icon: 'public-route' },
+      { label: 'Tunnel', path: '/admin/tunnel', icon: 'network' },
+      { label: 'Names', path: '/admin/names', icon: 'network' },
+      { label: 'Certificates', path: '/admin/tls', icon: 'access' },
+      { label: 'Trust', path: '/admin/trust', icon: 'access' },
+      { label: 'Firewall', path: '/admin/firewall', icon: 'public-route' },
     ],
   },
   {
     id: 'storage',
     label: 'Storage and backups',
     items: [
-      { label: 'Storage', path: '/admin/storage' },
-      { label: 'Backups', path: '/admin/backups' },
+      { label: 'Storage', path: '/admin/storage', icon: 'storage' },
+      { label: 'Backups', path: '/admin/backups', icon: 'storage' },
     ],
   },
   {
     id: 'system',
     label: 'System',
     items: [
-      { label: 'Configuration', path: '/admin/config' },
-      { label: 'Doctor', path: '/admin/doctor' },
-      { label: 'Drift', path: '/admin/drift' },
-      { label: 'Secrets', path: '/admin/secrets' },
-      { label: 'People', path: '/admin/people' },
-      { label: 'Sign-in', path: '/sign-in' },
-      { label: 'Operations', path: '/admin/operations' },
-      { label: 'Audit', path: '/admin/audit' },
-      { label: 'Account', path: '/account' },
-      { label: 'Advanced', path: '/admin/advanced' },
+      { label: 'Configuration', path: '/admin/config', icon: 'configuration' },
+      { label: 'Doctor', path: '/admin/doctor', icon: 'host' },
+      { label: 'Drift', path: '/admin/drift', icon: 'activity' },
+      { label: 'Secrets', path: '/admin/secrets', icon: 'access' },
+      { label: 'People', path: '/admin/people', icon: 'people' },
+      { label: 'Sign-in', path: '/sign-in', icon: 'access' },
+      { label: 'Operations', path: '/admin/operations', icon: 'activity' },
+      { label: 'Audit', path: '/admin/audit', icon: 'activity' },
+      { label: 'Account', path: '/account', icon: 'people' },
+      { label: 'Advanced', path: '/admin/advanced', icon: 'configuration' },
     ],
   },
 ];

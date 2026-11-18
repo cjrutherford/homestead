@@ -8,9 +8,12 @@
 # homestead-server, waits (bounded) for it to be healthy, and finalizes the
 # operation record from outside the daemon.
 #
-# This is the only unit with write access to /usr/local/bin. It listens on
-# nothing and reads only the apply marker, the staging directory and the
-# database under /var/lib/homestead.
+# This is the only unit allowed to replace platform executables. Binary-mode
+# applies write only /usr/local/bin. The Debian package mode also writes the
+# fixed Homestead package payload and dpkg/systemd bookkeeping paths. Its
+# approved APT simulation refuses dependency changes or removals; apply invokes
+# dpkg on only the staged package, so it cannot resolve or download packages.
+# Neither mode writes appliance configuration, stacks, Docker data, or mounts.
 
 [Unit]
 Description=Homestead platform update apply
@@ -20,7 +23,7 @@ Type=oneshot
 User=root
 ExecStart=/usr/local/bin/homestead-server apply-platform --data-dir /var/lib/homestead
 TimeoutStartSec=600
-ReadWritePaths=/var/lib/homestead /usr/local/bin
+ReadWritePaths=/var/lib/homestead /usr/local/bin /usr/local/share/homestead /usr/lib/systemd/system /usr/share/doc/homestead /var/lib/dpkg /var/lib/systemd/deb-systemd-helper-enabled /var/log/dpkg.log /etc/systemd/system/multi-user.target.wants
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

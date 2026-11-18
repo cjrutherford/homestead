@@ -25,7 +25,7 @@ import (
 const DBFileName = "homestead.db"
 
 // CurrentVersion is the latest schema version. Each new migration bumps it.
-const CurrentVersion = 59
+const CurrentVersion = 60
 
 // DefaultPath returns the production database path. The parent directory is
 // provisioned by S012 (layout.Ensure / provision-layout.sh); Open does not
@@ -1106,6 +1106,13 @@ ALTER TABLE people ADD COLUMN authentik_uid TEXT NOT NULL DEFAULT '';`,
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	summary TEXT NOT NULL
 );`,
+	},
+	{
+		// S511: approval binds a Debian package transaction to the exact
+		// simulated APT plan shown to the owner before handoff.
+		version: 60,
+		name:    "platform package update plan digest",
+		sql:     `ALTER TABLE platform_apply_marker ADD COLUMN plan_digest TEXT NOT NULL DEFAULT '';`,
 	},
 }
 

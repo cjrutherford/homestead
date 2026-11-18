@@ -18,18 +18,27 @@
       >
         Menu
       </button>
-      <p class="brand">Homestead</p>
+      <div class="brand brand-lockup">
+        <span class="brand-mark"><img src="/brand/homestead-logo.png" alt="" /></span>
+        <span>Homestead</span>
+      </div>
     </header>
 
     <div class="drawer-backdrop" aria-hidden="true" (click)="close()"></div>
 
     <aside id="sidebar" #sidebar class="sidebar" (keydown.tab)="trapFocus($event)" (keydown.shift.tab)="trapFocus($event)">
       <button #closeButton type="button" class="drawer-close" (click)="close()">Close menu</button>
-      <p class="brand">Homestead</p>
+      <div class="brand brand-lockup">
+        <span class="brand-mark"><img src="/brand/homestead-logo.png" alt="" /></span>
+        <span>Homestead</span>
+      </div>
 
       <nav aria-label="Primary">
         @if (sessions.isLoggedIn()) {
-          <a class="nav-link" routerLink="/">Apps dashboard</a>
+          <a class="nav-link" routerLink="/">
+            <hs-fieldwork-glyph name="catalog" />
+            <span>Apps dashboard</span>
+          </a>
         }
         @for (group of groups(); track group.id) {
           <div class="nav-group">
@@ -51,7 +60,10 @@
                     routerLinkActive="active"
                     ariaCurrentWhenActive="page"
                   >
-                    {{ item.label }}
+                    @if (item.icon) {
+                      <hs-fieldwork-glyph [name]="item.icon" />
+                    }
+                    <span>{{ item.label }}</span>
                   </a>
                 </li>
               }

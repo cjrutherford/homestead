@@ -1,0 +1,12 @@
+Package: homestead
+Version: @VERSION@-@REVISION@
+Architecture: @ARCH@
+Maintainer: @MAINTAINER@
+Depends: systemd
+Section: admin
+Priority: optional
+Description: customer-owned private-cloud appliance control plane
+ Homestead combines a native Go daemon, CLI, dashboard, and curated Compose
+ catalog for one customer-owned Linux appliance. It keeps configuration in
+ inspectable YAML and operational state in SQLite; applications remain
+ usable through Docker Compose without the Homestead control plane.

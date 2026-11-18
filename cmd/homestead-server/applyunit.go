@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/debianupdate"
 	"homestead/internal/layout"
 	"homestead/internal/operation"
 	"homestead/internal/platformapply"
@@ -40,6 +41,7 @@ func runApplyPlatform(args []string) error {
 	defer stop()
 	r := &platformapply.Runner{
 		Releases: release.NewStore(st), Markers: platformapply.NewStore(st), Ops: operation.New(st), Audit: audit.New(st),
+		Debian:  debianupdate.Manager{},
 		Systemd: platformapply.ExecSystemd{}, Unit: "homestead-server.service", StagingDir: stagingDirFor(*dataDir),
 		HealthTimeout: *healthTimeout, HealthInterval: time.Second, Probe: listenerProbe, RetryWait: 500 * time.Millisecond,
 	}

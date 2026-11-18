@@ -1,0 +1,35 @@
+Homestead Debian package
+========================
+
+This package provides the native Homestead daemon, homesteadctl, embedded
+dashboard, curated catalog, systemd units, and catalog build assets. Debian 13
+(trixie) is the package baseline. The amd64 binaries have run on the Debian 13
+review appliance, but this `.deb` has not been installed there. The arm64
+package is cross-built and inspected, but has not been run on arm64 hardware.
+Ubuntu compatibility is not verified for this package build.
+
+The package does not install Docker, Compose, cloudflared, Go, Node.js, or
+application containers. Docker Engine with Compose v2 is needed to install
+and run catalog apps. Public access additionally needs cloudflared and an
+owner-configured tunnel. The source checkout bootstrap remains available for
+preparing those host prerequisites.
+
+Install with `sudo apt install ./homestead_<version>_amd64.deb` or the arm64
+variant. The package starts and enables homestead-server. It creates the
+Homestead state directories and system groups. It does not edit Docker's
+daemon.json, restart Docker, claim the appliance, configure sign-in, or set up
+public exposure.
+
+Package upgrades replace package-owned binaries, catalog files, and units,
+then restart the daemon. They preserve /etc/homestead, /var/lib/homestead,
+/opt/homestead/stacks, Docker volumes, and mounted application data. The
+active tunnel connector is not restarted by a package upgrade.
+
+Removing or purging the package stops and disables the Homestead daemon and
+tunnel service and removes package-owned files. It leaves appliance
+configuration, SQLite state, Compose stacks, Docker containers and volumes,
+mounted data, and the Homestead system groups in place. Containers and data
+remain; they can still be managed with their Compose files. Access through
+Homestead's tunnel depends on that service's state. Purge does not factory-reset
+the appliance; use the separate, explicit factory-reset procedure only when
+data deletion is intended.

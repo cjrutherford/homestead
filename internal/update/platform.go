@@ -17,6 +17,7 @@ import (
 const (
 	ComponentDaemon = "homestead-server"
 	ComponentCLI    = "homesteadctl"
+	ComponentDeb    = "homestead-deb"
 )
 
 // platformComponents is the closed set: unknown names refuse rather
@@ -24,6 +25,7 @@ const (
 var platformComponents = map[string]bool{
 	ComponentDaemon: true,
 	ComponentCLI:    true,
+	ComponentDeb:    true,
 }
 
 // IsPlatformComponent reports whether a name addresses the Homestead

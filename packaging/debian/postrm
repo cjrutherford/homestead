@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+remove|purge)
+	systemctl daemon-reload || true
+	if [ "$1" = purge ]; then
+		deb-systemd-helper purge homestead-server.service homestead-tunnel.service homestead-apply.service >/dev/null || true
+	fi
+	;;
+esac
+
+exit 0

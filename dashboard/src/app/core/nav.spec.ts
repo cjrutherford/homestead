@@ -32,4 +32,12 @@ describe('navigation model', () => {
     const paths = NAV_GROUPS.flatMap((g) => g.items.map((i) => i.path));
     expect(new Set(paths).size).toBe(paths.length);
   });
+
+  it('keeps every navigation label paired with a supporting glyph', () => {
+    const items = NAV_GROUPS.flatMap((group) => group.items);
+    expect(items.every((item) => item.icon)).toBe(true);
+    expect(new Set(items.map((item) => item.icon))).toEqual(
+      new Set(['overview', 'review', 'host', 'catalog', 'configuration', 'updates', 'storage', 'network', 'public-route', 'access', 'activity', 'people']),
+    );
+  });
 });

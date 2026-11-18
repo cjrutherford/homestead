@@ -1,4 +1,4 @@
-.PHONY: guide-build release test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
+.PHONY: guide-build release deb test test-py test-go build lint lint-scripts dashboard-install dashboard-build dashboard-test dashboard-embed install uninstall check
 
 test: test-py test-go
 
@@ -18,6 +18,7 @@ lint:
 lint-scripts:
 	bash -n scripts/acceptance.sh
 	bash -n scripts/bootstrap.sh
+	bash -n scripts/build-deb.sh
 	bash -n scripts/install-systemd.sh
 	bash -n scripts/recover-control-plane.sh
 	bash -n scripts/uninstall-systemd.sh
@@ -69,7 +70,7 @@ check: lint build test
 # RELEASE_COUNTER with every release (ADR-025 rollback protection).
 # Signing is offline and manual: this target never touches a key.
 VERSION := $(shell cat VERSION)
-RELEASE_COUNTER ?= 1
+RELEASE_COUNTER ?= 2
 RELEASE_DIR := dist/release
 # Production release public key (S493): the .pub file from
 # scripts/release/keygen.sh. Defaults to release/release.pub when that file
@@ -90,4 +91,14 @@ release: dashboard-build dashboard-embed guide-build
 	{ echo "version=$(VERSION)"; echo "counter=$(RELEASE_COUNTER)"; \
 	  cd $(RELEASE_DIR) && sha256sum homestead-server-linux-* homesteadctl-linux-*; } > $(RELEASE_DIR)/SHA256SUMS.tmp
 	mv $(RELEASE_DIR)/SHA256SUMS.tmp $(RELEASE_DIR)/SHA256SUMS
+
+# Local-install Debian packages (S509). The package version includes a
+# Debian revision; maintainer metadata is supplied by the build owner.
+DEB_REVISION ?= 1
+DEB_OUTPUT_DIR ?= dist/deb
+
+deb: release
+	DEB_MAINTAINER="$(DEB_MAINTAINER)" DEB_REVISION="$(DEB_REVISION)" ./scripts/build-deb.sh amd64 $(RELEASE_DIR) $(DEB_OUTPUT_DIR)
+	DEB_MAINTAINER="$(DEB_MAINTAINER)" DEB_REVISION="$(DEB_REVISION)" ./scripts/build-deb.sh arm64 $(RELEASE_DIR) $(DEB_OUTPUT_DIR)
+	cd $(DEB_OUTPUT_DIR) && sha256sum homestead_$(VERSION)-$(DEB_REVISION)_amd64.deb homestead_$(VERSION)-$(DEB_REVISION)_arm64.deb > SHA256SUMS
 

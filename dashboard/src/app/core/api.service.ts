@@ -751,6 +751,15 @@ export interface PlatformRelease {
   sha256: string;
   override: boolean;
   plan_error?: string;
+  package_plan?: PlatformPackagePlan;
+}
+
+export interface PlatformPackagePlan {
+  package_version: string;
+  architecture: string;
+  installed_version: string;
+  actions: string[];
+  digest: string;
 }
 
 /** GET /api/v1/platform/updates — platform plan with verification state. */
@@ -791,6 +800,7 @@ export interface PlatformApplyBody {
   checksums: string;
   signature: string;
   allow_older: boolean;
+  plan_digest?: string;
 }
 
 /** POST /api/v1/platform/updates/rollback — restore the kept previous binary. */

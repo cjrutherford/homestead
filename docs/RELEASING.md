@@ -25,6 +25,42 @@ To try the build locally: `make dashboard-install release`; output is in
 `dist/release/`. Names in `SHA256SUMS` carry the platform suffix; verification
 matches the file name of the artifact the owner supplies.
 
+## Debian packages
+
+Build local-install packages for both supported CPU architectures with:
+
+```bash
+DEB_MAINTAINER='Name <email@example.org>' make deb
+```
+
+Set the maintainer field to the actual release owner/contact. The target uses
+the same release build, so both packages include architecture-specific Go
+binaries with the dashboard and owner guide embedded. It also packages the
+curated catalog, craft/everything build contexts and pinned source archives.
+Output is `dist/deb/homestead_<VERSION>-<revision>_amd64.deb` and `_arm64.deb`,
+plus a `SHA256SUMS` file. `DEB_REVISION` defaults to `1` and can be increased
+for packaging-only revisions. Package scripts start the daemon but do not
+bootstrap Docker/cloudflared or change Docker address pools.
+
+The `.deb` files are local-install artifacts; this target does not publish or
+cryptographically sign them. Release signing remains the offline owner step
+above. Build and inspect on Debian 13 for the target architecture before
+distributing. The amd64 binaries have run on the Debian 13 review appliance,
+but the `.deb` lifecycle has not been installed there. Arm64 is cross-built
+and structurally checked only. Ubuntu package compatibility has not been
+validated.
+
+For the in-app package updater (S511, ADR-063), the `.deb` must be an entry in
+the same ADR-025 signed checksums file as `version` and the monotonic `counter`.
+The `make deb` checksum file is not that release manifest; prepare the signed
+manifest from the final package bytes, then sign the manifest with the trusted
+platform release key. The updater rejects package metadata whose name,
+architecture, or version does not match the signed release and appliance.
+On the appliance, the owner reviews the bounded APT preview in Updates or with
+`homesteadctl updates verify`. Apply reruns that preview against the signed
+package and installs only the approved local archive with dpkg; it cannot
+resolve, download, add, or remove other packages.
+
 ## Release signing key
 
 The production key is generated and used offline by the owner (ADR-025,

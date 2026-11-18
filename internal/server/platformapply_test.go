@@ -46,6 +46,7 @@ func applyEnv(t *testing.T) (*platformEnv, *routeSystemd, string) {
 	e.h.marks = platformapply.NewStore(e.st)
 	e.h.applier = &platformapply.Applier{
 		Releases: e.h.rel, Markers: e.h.marks, Runner: operation.NewRunner(e.st), Ops: operation.New(e.st), Audit: e.h.audit,
+		Debian:  e.h.debian,
 		Systemd: sd, BinDir: bin, StagingDir: filepath.Join(e.dir, "staging"), Unit: "homestead-server.service",
 		ApplyUnit: "homestead-apply.service", Running: "0.0.1", AwaitPoll: 5 * time.Millisecond,
 	}
