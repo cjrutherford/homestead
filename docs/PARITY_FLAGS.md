@@ -118,6 +118,7 @@ request field), `cli-only` (the owner's exceptions above).
 | `people.go` | `--password-stdin` | people add/reset-password | password | `password` |
 | `people.go` | `--username` | people add/edit | username | `username` |
 | `platform.go` | `--allow-older` | platform apply/verify/rollback | allow_older | `allow_older` |
+| `platform.go` | `--plan-digest` | platform apply | plan_digest | n/a (`plan-digest`) |
 | `platform.go` | `--artifact` | platform apply/verify | artifact | `artifact` |
 | `platform.go` | `--checksums` | platform apply/verify | checksums | `checksums` |
 | `platform.go` | `--component` | platform apply/verify/rollback | component | `component` |

@@ -123,7 +123,9 @@
   no release notes beyond the CHANGELOG section.
 - Debian package distribution (S509): `make deb` builds architecture-specific
   packages and checksums locally, but the release workflow does not upload or
-  sign `.deb` artifacts.
+  sign `.deb` artifacts. S511 lets an owner-supplied package be applied only
+  when a signed ADR-025 checksums file includes that exact `.deb`; automated
+  package publication/signing and repository acquisition remain deferred.
 - Identity provider adapters: S202 defines the integration contract
   only; driving a provider's API (Authentik first, beyond the
   connection check) belongs to a later slice.

@@ -4,6 +4,7 @@ import { KeyValuePipe } from '@angular/common';
 import {
   ApiService,
   PlatformRelease,
+  PlatformPackagePlan,
   PlatformUpdates,
   TrustKey,
 } from '../core/api.service';
@@ -114,6 +115,7 @@ export class PlatformUpdatesPanel implements OnInit {
         checksums: this.checksums,
         signature: this.signature,
         allow_older: this.applyOlderConfirmed,
+        plan_digest: this.packagePlanFor(release)?.digest ?? '',
       })
       .subscribe({
         next: (started) => {
@@ -131,6 +133,19 @@ export class PlatformUpdatesPanel implements OnInit {
           this.fail(failure);
         },
       });
+  }
+
+  protected packagePlanFor(release: PlatformRelease): PlatformPackagePlan | null {
+    const last = this.last();
+    if (
+      release.component !== 'homestead-deb' ||
+      last?.component !== release.component ||
+      last.version !== release.version ||
+      last.sha256 !== release.sha256
+    ) {
+      return null;
+    }
+    return last.package_plan ?? null;
   }
 
   /**

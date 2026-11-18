@@ -43,7 +43,8 @@ type Marker struct {
 	Listen          string `json:"listen"`
 	SocketPath      string `json:"socket_path"`
 	// Kind is KindApply or KindRollback (S273).
-	Kind string `json:"kind"`
+	Kind       string `json:"kind"`
+	PlanDigest string `json:"plan_digest,omitempty"`
 }
 
 // Marker kinds. A rollback marker carries no staged files: the unit
@@ -83,11 +84,11 @@ func (s *Store) Begin(m Marker) error {
 	_, err := s.db.Exec(`INSERT INTO platform_apply_marker
 		(id, op_id, component, from_version, from_counter, to_version, to_counter, sha256, binary_path,
 		 previous_path, previous_sha256, override, override_reason, actor, created_at,
-		 staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind, plan_digest)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.OpID, m.Component, m.FromVersion, m.FromCounter, m.ToVersion, m.ToCounter, m.SHA256, m.BinaryPath,
 		m.PreviousPath, m.PreviousSHA, m.Override, m.OverrideWhy, m.Actor, m.CreatedAt.Format(time.RFC3339Nano),
-		m.StagedArtifact, m.StagedChecksums, m.StagedSignature, m.AllowOlder, m.Listen, m.SocketPath, m.Kind)
+		m.StagedArtifact, m.StagedChecksums, m.StagedSignature, m.AllowOlder, m.Listen, m.SocketPath, m.Kind, m.PlanDigest)
 	if err != nil {
 		if strings.Contains(err.Error(), "constraint") {
 			return ErrPending
@@ -103,11 +104,11 @@ func (s *Store) Pending() (Marker, bool, error) {
 	var created string
 	err := s.db.QueryRow(`SELECT op_id, component, from_version, from_counter, to_version, to_counter, sha256,
 		binary_path, previous_path, previous_sha256, override, override_reason, actor, created_at,
-		staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind
+		staged_artifact, staged_checksums, staged_signature, allow_older, listen, socket_path, kind, plan_digest
 		FROM platform_apply_marker WHERE id = 1`).Scan(
 		&m.OpID, &m.Component, &m.FromVersion, &m.FromCounter, &m.ToVersion, &m.ToCounter, &m.SHA256,
 		&m.BinaryPath, &m.PreviousPath, &m.PreviousSHA, &m.Override, &m.OverrideWhy, &m.Actor, &created,
-		&m.StagedArtifact, &m.StagedChecksums, &m.StagedSignature, &m.AllowOlder, &m.Listen, &m.SocketPath, &m.Kind)
+		&m.StagedArtifact, &m.StagedChecksums, &m.StagedSignature, &m.AllowOlder, &m.Listen, &m.SocketPath, &m.Kind, &m.PlanDigest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Marker{}, false, nil
 	}

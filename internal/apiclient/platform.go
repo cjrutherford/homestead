@@ -29,18 +29,27 @@ type PlatformPlan struct {
 
 // PlatformRelease is the latest verification record for a component.
 type PlatformRelease struct {
-	Component  string    `json:"component"`
-	Version    string    `json:"version"`
-	Counter    int64     `json:"counter"`
-	State      string    `json:"state"`
-	Refusal    string    `json:"refusal"`
-	Detail     string    `json:"detail"`
-	KeyID      string    `json:"key_id"`
-	SHA256     string    `json:"sha256"`
-	Override   bool      `json:"override"`
-	Actor      string    `json:"actor"`
-	VerifiedAt time.Time `json:"verified_at"`
-	PlanError  string    `json:"plan_error"`
+	Component   string               `json:"component"`
+	Version     string               `json:"version"`
+	Counter     int64                `json:"counter"`
+	State       string               `json:"state"`
+	Refusal     string               `json:"refusal"`
+	Detail      string               `json:"detail"`
+	KeyID       string               `json:"key_id"`
+	SHA256      string               `json:"sha256"`
+	Override    bool                 `json:"override"`
+	Actor       string               `json:"actor"`
+	VerifiedAt  time.Time            `json:"verified_at"`
+	PlanError   string               `json:"plan_error"`
+	PackagePlan *PlatformPackagePlan `json:"package_plan,omitempty"`
+}
+
+type PlatformPackagePlan struct {
+	PackageVersion string   `json:"package_version"`
+	Architecture   string   `json:"architecture"`
+	Installed      string   `json:"installed_version"`
+	Actions        []string `json:"actions"`
+	Digest         string   `json:"digest"`
 }
 
 // PlatformInstalled is the recorded installed release of a component.
@@ -169,12 +178,12 @@ func (c *Client) TrustKeyRemove(ctx context.Context, keyID string) error {
 // release was verified from; the daemon and the privileged apply unit
 // verify them again. allowOlder is the explicit, audited override for an
 // older counter.
-func (c *Client) PlatformApply(ctx context.Context, component, artifact, checksums, signature string, allowOlder bool) (int64, error) {
+func (c *Client) PlatformApply(ctx context.Context, component, artifact, checksums, signature string, allowOlder bool, planDigest string) (int64, error) {
 	var out struct {
 		ID int64 `json:"id"`
 	}
 	body := map[string]any{"component": component, "artifact": artifact, "checksums": checksums,
-		"signature": signature, "allow_older": allowOlder}
+		"signature": signature, "allow_older": allowOlder, "plan_digest": planDigest}
 	if err := c.postJSON(ctx, "/api/v1/platform/updates/apply", body, &out); err != nil {
 		return 0, err
 	}

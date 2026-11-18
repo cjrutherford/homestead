@@ -31,7 +31,7 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, args []st
 	if len(view.Releases) == 0 {
 		fmt.Fprintln(stdout, "no platform releases verified yet; run `homesteadctl updates verify`")
 	}
-	for _, component := range []string{"homestead-server", "homesteadctl"} {
+	for _, component := range []string{"homestead-server", "homesteadctl", "homestead-deb"} {
 		if v, ok := view.Running[component]; ok {
 			fmt.Fprintf(stdout, "running %s: %s\n", component, v)
 		}
@@ -55,8 +55,12 @@ func runUpdatesPlatform(ctx context.Context, client *apiclient.Client, args []st
 		fmt.Fprintf(stdout, "plan: %s %s -> %s [%s]\n", move.Component, move.Current, move.Target, move.Verification)
 	}
 	if view.Pending != nil {
-		fmt.Fprintf(stdout, "pending apply: %s %s -> %s (operation %d); if the apply unit died, run `homesteadctl updates platform clear-apply`\n",
-			view.Pending.Component, view.Pending.FromVersion, view.Pending.ToVersion, view.Pending.OpID)
+		recovery := "if the apply unit died, run `homesteadctl updates platform clear-apply`"
+		if view.Pending.Component == "homestead-deb" {
+			recovery = "if the apply unit died, inspect dpkg state and the package operation before clearing"
+		}
+		fmt.Fprintf(stdout, "pending apply: %s %s -> %s (operation %d); %s\n",
+			view.Pending.Component, view.Pending.FromVersion, view.Pending.ToVersion, view.Pending.OpID, recovery)
 	}
 	for _, prev := range view.Previous {
 		fmt.Fprintf(stdout, "previous %s kept: %s at %s (sha256 %s); roll back with `homesteadctl updates rollback-platform --component %s`\n",
@@ -139,6 +143,13 @@ func runUpdatesVerify(ctx context.Context, client *apiclient.Client, args []stri
 		return exitError
 	}
 	fmt.Fprintf(stdout, "%s %s (counter %d): verified with key %s\n", rel.Component, rel.Version, rel.Counter, rel.KeyID)
+	if rel.PackagePlan != nil {
+		fmt.Fprintf(stdout, "APT package plan for %s on %s (installed %s):\n", rel.PackagePlan.PackageVersion, rel.PackagePlan.Architecture, rel.PackagePlan.Installed)
+		for _, action := range rel.PackagePlan.Actions {
+			fmt.Fprintf(stdout, "  %s\n", action)
+		}
+		fmt.Fprintf(stdout, "owner approval digest: %s\n", rel.PackagePlan.Digest)
+	}
 	if rel.Override {
 		fmt.Fprintln(stdout, "older release allowed by owner override (audited)")
 	}
@@ -254,7 +265,7 @@ func runTrust(ctx context.Context, args []string, stdout, stderr io.Writer, ops 
 	return exitUsage
 }
 
-const applyPlatformUsage = "usage: homesteadctl updates apply-platform --component NAME --artifact FILE --checksums FILE --signature FILE [--allow-older] [--follow]"
+const applyPlatformUsage = "usage: homesteadctl updates apply-platform --component NAME --artifact FILE --checksums FILE --signature FILE [--plan-digest SHA256] [--allow-older] [--follow]"
 
 // Poll cadence and bound for following an apply across the daemon
 // restart it causes; variables so tests can shorten them.
@@ -278,7 +289,7 @@ func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args
 			allowOlder = true
 		case "--follow":
 			follow = true
-		case "--component", "--artifact", "--checksums", "--signature":
+		case "--component", "--artifact", "--checksums", "--signature", "--plan-digest":
 			if i+1 >= len(args) {
 				fmt.Fprintln(stderr, applyPlatformUsage)
 				return exitUsage
@@ -305,7 +316,11 @@ func runUpdatesApplyPlatform(ctx context.Context, client *apiclient.Client, args
 			abs[flag] = path
 		}
 	}
-	id, err := client.PlatformApply(ctx, abs["--component"], abs["--artifact"], abs["--checksums"], abs["--signature"], allowOlder)
+	if abs["--component"] == "homestead-deb" && values["--plan-digest"] == "" {
+		fmt.Fprintln(stderr, "Debian package apply requires --plan-digest from `homesteadctl updates verify`")
+		return exitUsage
+	}
+	id, err := client.PlatformApply(ctx, abs["--component"], abs["--artifact"], abs["--checksums"], abs["--signature"], allowOlder, values["--plan-digest"])
 	if err != nil {
 		if olderRefusal(err) && !allowOlder {
 			fmt.Fprintln(stderr, "re-run with --allow-older to apply an older release (audited with both versions)")

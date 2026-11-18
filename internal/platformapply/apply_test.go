@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/debianupdate"
 	"homestead/internal/operation"
 	"homestead/internal/release"
 	"homestead/internal/store"
@@ -32,6 +33,49 @@ type fakeSystemd struct {
 	pid       int
 	active    bool
 	startedCh chan struct{}
+}
+
+type fakeDebRunner struct {
+	installed  string
+	target     string
+	arch       string
+	installErr error
+	absent     bool
+}
+
+func (f *fakeDebRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	switch name {
+	case "/usr/bin/dpkg-query":
+		if f.absent {
+			return []byte("dpkg-query: no packages found matching homestead"), errors.New("exit status 1")
+		}
+		return []byte("installed\n" + f.installed + "\n" + f.arch + "\n"), nil
+	case "/usr/bin/dpkg-deb":
+		return []byte("Package: homestead\nVersion: " + f.target + "\nArchitecture: " + f.arch + "\n"), nil
+	case "/usr/bin/dpkg":
+		if len(args) > 0 && args[0] == "--print-architecture" {
+			return []byte(f.arch + "\n"), nil
+		}
+		if len(args) > 0 && args[0] == "--install" {
+			if f.installErr != nil {
+				return nil, f.installErr
+			}
+			f.installed = f.target
+			return []byte("installed\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected dpkg arguments %v", args)
+	case "/usr/local/bin/homestead-server":
+		return []byte("homestead-server " + strings.TrimSuffix(f.installed, "-1") + "\n"), nil
+	case "/usr/local/bin/homesteadctl":
+		return []byte("homesteadctl " + strings.TrimSuffix(f.installed, "-1") + "\n"), nil
+	case "/usr/bin/apt-get":
+		if len(args) > 0 && args[0] == "-s" {
+			return []byte("Inst homestead [" + f.installed + "] (" + f.target + " local-deb [" + f.arch + "])\nConf homestead (" + f.target + " local-deb [" + f.arch + "])\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected apt-get arguments %v", args)
+	default:
+		return nil, fmt.Errorf("unexpected executable %s", name)
+	}
 }
 
 func newFakeSystemd() *fakeSystemd { return &fakeSystemd{pid: 4242, startedCh: make(chan struct{}, 4)} }
@@ -121,10 +165,13 @@ func newEnv(t *testing.T) *env {
 		Unit: "homestead-server.service", ApplyUnit: "homestead-apply.service", Running: "0.1.0",
 		Listen: "127.0.0.1:8080", SocketPath: "/run/homestead/homestead.sock", AwaitPoll: 5 * time.Millisecond,
 	}
+	debian := debianupdate.Manager{Runner: &fakeDebRunner{absent: true}}
+	e.a.Debian = debian
 	e.execSHA = func(int) (string, error) { return hashFile(filepath.Join(e.bin, "homestead-server")) }
 	e.r = &Runner{
 		Releases: rel, Markers: e.a.Markers, Ops: e.a.Ops, Audit: e.a.Audit, Systemd: e.sd,
-		Unit: "homestead-server.service", StagingDir: e.staging,
+		Debian: debian,
+		Unit:   "homestead-server.service", StagingDir: e.staging,
 		HealthTimeout: 150 * time.Millisecond, HealthInterval: 5 * time.Millisecond,
 		ExecDigest: func(pid int) (string, error) { return e.execSHA(pid) },
 	}
@@ -200,7 +247,9 @@ func (e *env) start(req Request) operation.Operation {
 	select {
 	case <-e.sd.startedCh:
 	case <-time.After(5 * time.Second):
-		e.t.Fatal("apply unit was never started")
+		pending, ok, perr := e.a.Markers.Pending()
+		failed, ferr := e.a.Ops.Get(op.ID)
+		e.t.Fatalf("apply unit was never started: op=%+v opErr=%v pending=%+v pendingOK=%v pendingErr=%v", failed, ferr, pending, ok, perr)
 	}
 	return op
 }
@@ -319,6 +368,88 @@ func TestApplyViaApplyUnit(t *testing.T) {
 		t.Fatalf("second run = %v", err)
 	}
 }
+
+func TestDebianPackageApplyUsesApprovedPlanAndVerifiesRestartedDaemon(t *testing.T) {
+	e := newEnv(t)
+	debRunner := &fakeDebRunner{installed: "0.1.0-1", target: "0.2.0-1", arch: "amd64"}
+	manager := debianupdate.Manager{Runner: debRunner}
+	e.a.Debian, e.r.Debian = manager, manager
+	if err := e.a.Releases.RecordInstalled(debianupdateComponent, "0.1.0", 1); err != nil {
+		t.Fatal(err)
+	}
+	req := e.release(debianupdateComponent, "0.2.0", 2, "signed deb bytes")
+	preview, err := manager.Preview(context.Background(), req.Artifact, "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.PlanDigest = preview.Digest
+	wrong := req
+	wrong.PlanDigest = strings.Repeat("0", 64)
+	if _, err := e.a.preflight(context.Background(), wrong); !errors.Is(err, debianupdate.ErrPlanChanged) {
+		t.Fatalf("wrong approved plan error = %v", err)
+	}
+	e.r.Probe = func(_ context.Context, m Marker) error {
+		if m.ToVersion != "0.2.0" || debRunner.installed != "0.2.0-1" {
+			return fmt.Errorf("daemon/package version mismatch: marker=%s package=%s", m.ToVersion, debRunner.installed)
+		}
+		return nil
+	}
+	op := e.start(req)
+	marker, ok, err := e.a.Markers.Pending()
+	if err != nil || !ok || marker.PlanDigest != preview.Digest || marker.Component != debianupdateComponent {
+		t.Fatalf("marker=%+v ok=%v err=%v", marker, ok, err)
+	}
+	if err := e.r.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusSucceeded || debRunner.installed != "0.2.0-1" {
+		t.Fatalf("operation=%+v installed=%s", got, debRunner.installed)
+	}
+	installed, err := e.a.Releases.Installed(debianupdateComponent)
+	if err != nil || installed.Version != "0.2.0" || installed.Counter != 2 {
+		t.Fatalf("recorded release=%+v err=%v", installed, err)
+	}
+}
+
+func TestSourceBinaryApplyIsRefusedWhenDpkgOwnsInstall(t *testing.T) {
+	e := newEnv(t)
+	e.a.Debian = debianupdate.Manager{Runner: &fakeDebRunner{installed: "0.1.0-1", target: "0.2.0-1", arch: "amd64"}}
+	req := e.release("homestead-server", "0.2.0", 2, "new daemon")
+	if _, err := e.a.preflight(context.Background(), req); !errors.Is(err, ErrMode) {
+		t.Fatalf("preflight error = %v, want ErrMode", err)
+	}
+}
+
+func TestFailedDebianApplyRetainsInputsAndDoesNotDowngrade(t *testing.T) {
+	e := newEnv(t)
+	debRunner := &fakeDebRunner{installed: "0.1.0-1", target: "0.2.0-1", arch: "amd64", installErr: errors.New("simulated dpkg failure")}
+	manager := debianupdate.Manager{Runner: debRunner}
+	e.a.Debian, e.r.Debian = manager, manager
+	if err := e.a.Releases.RecordInstalled(debianupdateComponent, "0.1.0", 1); err != nil {
+		t.Fatal(err)
+	}
+	req := e.release(debianupdateComponent, "0.2.0", 2, "signed deb bytes")
+	preview, err := manager.Preview(context.Background(), req.Artifact, "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.PlanDigest = preview.Digest
+	op := e.start(req)
+	if err := e.r.Run(context.Background()); err == nil {
+		t.Fatal("failed package installation unexpectedly succeeded")
+	}
+	got := e.wait(op.ID)
+	if got.Status != operation.StatusFailed || len(e.staged()) != 3 {
+		t.Fatalf("operation=%+v staged=%v", got, e.staged())
+	}
+	installed, err := e.a.Releases.Installed(debianupdateComponent)
+	if err != nil || installed.Version != "0.1.0" || installed.Counter != 1 {
+		t.Fatalf("failed transaction changed installed release: %+v err=%v", installed, err)
+	}
+}
+
+const debianupdateComponent = "homestead-deb"
 
 func TestStagedFilesReverifiedFromFiles(t *testing.T) {
 	cases := map[string]func(e *env, m Marker){

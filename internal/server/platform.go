@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"homestead/internal/audit"
+	"homestead/internal/debianupdate"
 	"homestead/internal/doctor"
 	"homestead/internal/layout"
 	"homestead/internal/operation"
@@ -27,10 +28,11 @@ import (
 // is where the trusted-key configuration renders for inspection.
 func (s *Server) MountPlatform(st *store.Store, trustYAML string) {
 	h := &platformHandlers{s: s, rel: release.NewStore(st), audit: audit.New(st), trustYAML: trustYAML,
-		marks: platformapply.NewStore(st)}
+		marks: platformapply.NewStore(st), debian: debianupdate.Manager{}}
 	h.applier = &platformapply.Applier{
 		Releases: h.rel, Markers: h.marks, Runner: operation.NewRunner(st), Ops: operation.New(st), Audit: h.audit,
 		Systemd: platformapply.ExecSystemd{}, BinDir: PlatformBinDir,
+		Debian:     h.debian,
 		StagingDir: filepath.Join(layout.LibDir.Path, "staging"), Unit: PlatformUnit, ApplyUnit: PlatformApplyUnit,
 		Running: version.Version, Listen: s.addr, SocketPath: s.SocketPath,
 	}
@@ -64,6 +66,7 @@ type platformHandlers struct {
 	s         *Server
 	rel       *release.Store
 	audit     *audit.Service
+	debian    debianupdate.Manager
 	trustYAML string
 	marks     *platformapply.Store
 	applier   *platformapply.Applier
@@ -112,35 +115,57 @@ func (h *platformHandlers) plan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Each component reports its own version: the daemon knows what it
-	// runs; the CLI is only known by its installed record (the daemon's
-	// version says nothing about the installed homesteadctl).
-	running := map[string]string{update.ComponentDaemon: version.Version}
+	packageInstall, packageErr := h.debian.Installed(r.Context())
+	packageManaged := packageErr == nil
+	if packageErr != nil && !errors.Is(packageErr, debianupdate.ErrNotInstalled) {
+		http.Error(w, packageErr.Error(), http.StatusInternalServerError)
+		return
+	}
+	running := map[string]string{}
 	installed := map[string]release.Installed{}
-	for _, component := range []string{update.ComponentDaemon, update.ComponentCLI} {
+	for _, component := range []string{update.ComponentDaemon, update.ComponentCLI, update.ComponentDeb} {
 		in, err := h.rel.Installed(component)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		installed[component] = in
-		if component != update.ComponentDaemon {
-			running[component] = in.Version
-			if in.Version == "" {
-				running[component] = unrecordedVersion
-			}
-		}
 	}
-	planRunning := map[string]string{update.ComponentDaemon: version.Version}
-	if v := installed[update.ComponentCLI].Version; v != "" {
-		planRunning[update.ComponentCLI] = v
+	planRunning := map[string]string{}
+	if packageManaged {
+		packageVersion, err := debianupdate.ReleaseVersion(packageInstall.Version)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if installed[update.ComponentDeb].Version == "" {
+			if _, err := h.rel.SeedInstalled(update.ComponentDeb, packageVersion, 0); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			installed[update.ComponentDeb], _ = h.rel.Installed(update.ComponentDeb)
+		}
+		running[update.ComponentDeb], planRunning[update.ComponentDeb] = packageVersion, packageVersion
+	} else {
+		running[update.ComponentDaemon] = version.Version
+		planRunning[update.ComponentDaemon] = version.Version
+		running[update.ComponentCLI] = installed[update.ComponentCLI].Version
+		if running[update.ComponentCLI] == "" {
+			running[update.ComponentCLI] = unrecordedVersion
+		} else {
+			planRunning[update.ComponentCLI] = running[update.ComponentCLI]
+		}
 	}
 	views := make([]releaseView, 0, len(releases))
 	refused := []releaseView{}
 	var desired []update.PlatformRelease
 	for _, rel := range releases {
 		view := releaseView{Release: rel}
-		if rel.State != release.StateVerified {
+		modeMismatch := (packageManaged && rel.Component != update.ComponentDeb) || (!packageManaged && rel.Component == update.ComponentDeb)
+		if modeMismatch {
+			view.PlanError = "refused: installation mode mismatch; use the " + map[bool]string{true: "homestead-deb package", false: "source binary"}[packageManaged] + " update component for this appliance"
+			refused = append(refused, view)
+		} else if rel.State != release.StateVerified {
 			// Failed, rollback-refused, and unverified releases are shown,
 			// never planned.
 			view.PlanError = "refused: " + rel.State
@@ -264,6 +289,7 @@ type platformApplyBody struct {
 	Checksums  string `json:"checksums"`
 	Signature  string `json:"signature"`
 	AllowOlder bool   `json:"allow_older"`
+	PlanDigest string `json:"plan_digest"`
 }
 
 // apply starts a platform update operation for a verified release
@@ -283,14 +309,15 @@ func (h *platformHandlers) apply(w http.ResponseWriter, r *http.Request) {
 	}
 	started, err := h.applier.Start(r.Context(), platformapply.Request{
 		Component: body.Component, Artifact: body.Artifact, Checksums: body.Checksums, Signature: body.Signature,
-		Actor: op.Session.Username, AllowOlder: body.AllowOlder,
+		Actor: op.Session.Username, AllowOlder: body.AllowOlder, PlanDigest: body.PlanDigest,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
 		case errors.Is(err, platformapply.ErrInput):
 			status = http.StatusBadRequest
-		case errors.Is(err, platformapply.ErrNotVerified), errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest):
+		case errors.Is(err, platformapply.ErrNotVerified), errors.Is(err, platformapply.ErrOlder), errors.Is(err, platformapply.ErrDigest),
+			errors.Is(err, platformapply.ErrMode), errors.Is(err, debianupdate.ErrPlanChanged):
 			status = http.StatusUnprocessableEntity
 		case errors.Is(err, platformapply.ErrCurrent), errors.Is(err, platformapply.ErrBusy):
 			status = http.StatusConflict
@@ -316,6 +343,11 @@ type verifyBody struct {
 	AllowOlder bool   `json:"allow_older"`
 }
 
+type platformVerifyResult struct {
+	release.Release
+	PackagePlan *debianupdate.Preview `json:"package_plan,omitempty"`
+}
+
 func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 	op, ok := requireOperator(w, r)
 	if !ok {
@@ -328,6 +360,20 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 	}
 	if !update.IsPlatformComponent(body.Component) {
 		http.Error(w, fmt.Sprintf("unknown platform component %q", body.Component), http.StatusBadRequest)
+		return
+	}
+	packageInstall, packageErr := h.debian.Installed(r.Context())
+	packageManaged := packageErr == nil
+	if packageErr != nil && !errors.Is(packageErr, debianupdate.ErrNotInstalled) {
+		http.Error(w, packageErr.Error(), http.StatusInternalServerError)
+		return
+	}
+	if (body.Component == update.ComponentDeb) != packageManaged {
+		http.Error(w, "update component does not match the appliance installation mode", http.StatusConflict)
+		return
+	}
+	if body.Component == update.ComponentDeb && body.AllowOlder {
+		http.Error(w, "Debian package updates are forward-only", http.StatusUnprocessableEntity)
 		return
 	}
 	for name, path := range map[string]string{"artifact": body.Artifact, "checksums": body.Checksums, "signature": body.Signature} {
@@ -346,6 +392,22 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if body.Component == update.ComponentDeb && installed.Version == "" {
+		packageVersion, err := debianupdate.ReleaseVersion(packageInstall.Version)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := h.rel.SeedInstalled(body.Component, packageVersion, 0); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		installed, err = h.rel.Installed(body.Component)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	res, verr := release.Verify(release.Inputs{
 		ArtifactPath: body.Artifact, ChecksumsPath: body.Checksums, SignaturePath: body.Signature,
 		Trusted: keys, Installed: installed, AllowOlder: body.AllowOlder,
@@ -355,6 +417,21 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 		if err := (update.PlatformRelease{Component: body.Component, Version: res.Version}).Validate(); err != nil {
 			verr = fmt.Errorf("%w: %v", release.ErrBadChecksums, err)
 		}
+	}
+	var packagePlan *debianupdate.Preview
+	if verr == nil && body.Component == update.ComponentDeb {
+		preview, err := h.debian.Preview(r.Context(), body.Artifact, res.Version)
+		if err != nil {
+			h.record(audit.Entry{Actor: op.Session.Username, Action: "platform.verify", Outcome: audit.OutcomeError,
+				Detail: "Debian package preview refused: " + err.Error()})
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if preview.ArtifactSHA != res.SHA256 {
+			http.Error(w, "package bytes changed during verification; retry verification", http.StatusUnprocessableEntity)
+			return
+		}
+		packagePlan = &preview
 	}
 	// Unreadable inputs are a bad request, not a verification verdict. The
 	// answer is generic on purpose: it names the field, never the path,
@@ -419,7 +496,7 @@ func (h *platformHandlers) verify(w http.ResponseWriter, r *http.Request) {
 			rec = candidate
 		}
 	}
-	writeJSON(w, rec)
+	writeJSON(w, platformVerifyResult{Release: rec, PackagePlan: packagePlan})
 }
 
 // verifyFileError renders a file refusal without echoing paths.

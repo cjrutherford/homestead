@@ -20,10 +20,12 @@ import (
 
 	"homestead/internal/audit"
 	"homestead/internal/auth"
+	"homestead/internal/debianupdate"
 	"homestead/internal/doctor"
 	"homestead/internal/platformapply"
 	"homestead/internal/release"
 	"homestead/internal/store"
+	"homestead/internal/update"
 	"homestead/internal/version"
 )
 
@@ -35,6 +37,30 @@ type platformEnv struct {
 	pub   ed25519.PublicKey
 	priv  ed25519.PrivateKey
 	keyID [8]byte
+}
+
+type platformPackageRunner struct {
+	installed bool
+	current   string
+	candidate string
+}
+
+func (f *platformPackageRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
+	switch name {
+	case "/usr/bin/dpkg-query":
+		if !f.installed {
+			return []byte("dpkg-query: no packages found matching homestead"), fmt.Errorf("exit status 1")
+		}
+		return []byte("installed\n" + f.current + "\namd64\n"), nil
+	case "/usr/bin/dpkg-deb":
+		return []byte("Package: homestead\nVersion: " + f.candidate + "\nArchitecture: amd64\n"), nil
+	case "/usr/bin/dpkg":
+		return []byte("amd64\n"), nil
+	case "/usr/bin/apt-get":
+		return []byte("Inst homestead [" + f.current + "] (" + f.candidate + " local-deb [amd64])\nConf homestead (" + f.candidate + " local-deb [amd64])\n"), nil
+	default:
+		return nil, fmt.Errorf("unexpected executable %s", name)
+	}
 }
 
 func newPlatformEnv(t *testing.T) *platformEnv {
@@ -49,7 +75,7 @@ func newPlatformEnv(t *testing.T) *platformEnv {
 	env := &platformEnv{t: t, st: st, dir: dir}
 	env.pub, env.priv, _ = ed25519.GenerateKey(rand.Reader)
 	_, _ = rand.Read(env.keyID[:])
-	env.h = &platformHandlers{s: srv, rel: release.NewStore(st), audit: audit.New(st), trustYAML: filepath.Join(dir, "platform-trust.yaml"), marks: platformapply.NewStore(st)}
+	env.h = &platformHandlers{s: srv, rel: release.NewStore(st), audit: audit.New(st), trustYAML: filepath.Join(dir, "platform-trust.yaml"), marks: platformapply.NewStore(st), debian: debianupdate.Manager{Runner: &platformPackageRunner{}}}
 	return env
 }
 
@@ -325,6 +351,37 @@ func TestPlatformRunningVersionSeedsOnlyTheDaemon(t *testing.T) {
 	}
 	if in, _ := e.h.rel.Installed("homesteadctl"); in.Counter != 0 {
 		t.Fatalf("CLI baseline seeded from the daemon's version: %+v", in)
+	}
+}
+
+func TestPackageVerifyReturnsArchitectureBoundAptPlanAndModeGuards(t *testing.T) {
+	e := newPlatformEnv(t)
+	e.trust()
+	runner := &platformPackageRunner{installed: true, current: "0.1.0-1", candidate: "0.2.0-1"}
+	e.h.debian = debianupdate.Manager{Runner: runner}
+	body := e.releaseFor(update.ComponentDeb, "0.2.0", 2)
+	raw, _ := json.Marshal(body)
+	rec := opRequest(http.MethodPost, string(raw), e.h.verify, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("package verify = %d: %s", rec.Code, rec.Body.String())
+	}
+	var result struct {
+		Component   string                `json:"component"`
+		State       string                `json:"state"`
+		PackagePlan *debianupdate.Preview `json:"package_plan"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Component != update.ComponentDeb || result.State != release.StateVerified || result.PackagePlan == nil || len(result.PackagePlan.Digest) != 64 || result.PackagePlan.Architecture != "amd64" || len(result.PackagePlan.Actions) != 2 {
+		t.Fatalf("verify response = %+v", result)
+	}
+	view := e.planView()
+	if view.Running[update.ComponentDeb] != "0.1.0" || len(view.Plan.Components) != 1 || view.Plan.Components[0].Component != update.ComponentDeb {
+		t.Fatalf("package-mode plan = %+v", view)
+	}
+	if _, code := e.verify(e.release("0.3.0", 3)); code != http.StatusConflict {
+		t.Fatalf("source binary verification in package mode = %d, want conflict", code)
 	}
 }
 

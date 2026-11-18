@@ -168,11 +168,55 @@ describe('PlatformUpdatesPanel', () => {
       checksums: '/srv/rel/SUMS',
       signature: '/srv/rel/SUMS.minisig',
       allow_older: false,
+      plan_digest: '',
     });
     request.flush({ id: 21 });
     reload();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('app-operation-progress a[href="/admin/operations/21"]')).not.toBeNull();
+  });
+
+  it('shows the approved Debian plan and sends its digest with owner confirmation', () => {
+    const panel = fixture.componentInstance as any;
+    const release = {
+      ...VIEW.releases[0],
+      component: 'homestead-deb',
+      version: '0.0.7',
+      counter: 7,
+      sha256: 'a'.repeat(64),
+    };
+    const digest = 'b'.repeat(64);
+    panel.view.set({ ...VIEW, releases: [release] });
+    panel.last.set({
+      ...release,
+      package_plan: {
+        package_version: '0.0.7-1',
+        architecture: 'amd64',
+        installed_version: '0.0.6-1',
+        actions: [
+          'Inst homestead [0.0.6-1] (0.0.7-1 local-deb [amd64])',
+          'Conf homestead (0.0.7-1 local-deb [amd64])',
+        ],
+        digest,
+      },
+    });
+    panel.artifact = '/srv/rel/homestead_0.0.7-1_amd64.deb';
+    panel.checksums = '/srv/rel/SUMS';
+    panel.signature = '/srv/rel/SUMS.minisig';
+    fixture.detectChanges();
+    expect(text()).toContain('APT preview: 0.0.7-1 for amd64, upgrading 0.0.6-1.');
+    expect(text()).toContain(digest);
+
+    panel.applyConfirmed = true;
+    panel.apply(release);
+    const request = http.expectOne('/api/v1/platform/updates/apply');
+    expect(request.request.body).toMatchObject({
+      component: 'homestead-deb',
+      plan_digest: digest,
+      artifact: '/srv/rel/homestead_0.0.7-1_amd64.deb',
+    });
+    request.flush({ id: 23 });
+    reload();
   });
 
   it('asks for a separate older-release confirmation after an older refusal', () => {

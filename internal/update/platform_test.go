@@ -6,7 +6,7 @@ import (
 )
 
 func TestIsPlatformComponent(t *testing.T) {
-	for _, name := range []string{ComponentDaemon, ComponentCLI} {
+	for _, name := range []string{ComponentDaemon, ComponentCLI, ComponentDeb} {
 		if !IsPlatformComponent(name) {
 			t.Fatalf("IsPlatformComponent(%q) = false", name)
 		}

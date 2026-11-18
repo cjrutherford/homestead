@@ -50,6 +50,17 @@ but the `.deb` lifecycle has not been installed there. Arm64 is cross-built
 and structurally checked only. Ubuntu package compatibility has not been
 validated.
 
+For the in-app package updater (S511, ADR-063), the `.deb` must be an entry in
+the same ADR-025 signed checksums file as `version` and the monotonic `counter`.
+The `make deb` checksum file is not that release manifest; prepare the signed
+manifest from the final package bytes, then sign the manifest with the trusted
+platform release key. The updater rejects package metadata whose name,
+architecture, or version does not match the signed release and appliance.
+On the appliance, the owner reviews the bounded APT preview in Updates or with
+`homesteadctl updates verify`. Apply reruns that preview against the signed
+package and installs only the approved local archive with dpkg; it cannot
+resolve, download, add, or remove other packages.
+
 ## Release signing key
 
 The production key is generated and used offline by the owner (ADR-025,
